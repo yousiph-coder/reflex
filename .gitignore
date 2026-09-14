@@ -57,6 +57,9 @@ htmlcov/
 .nox/
 .ruff_cache/
 .mypy_cache/
+*.db
+*.sqlite
+*.sqlite3
 
 # ── Node / Frontend ─────────────────────────────────────────────
 frontend/node_modules/

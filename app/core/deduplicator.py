@@ -145,43 +145,109 @@ class IncidentDeduplicator:
         return await self._redis.ttl(key)
 
 
+class InMemoryRedis:
+    """In-memory async Redis substitute for environments without a live Redis server."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, tuple[float | None, str]] = {}
+
+    async def set(
+        self,
+        name: str,
+        value: str,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool:
+        import time
+        now = time.monotonic()
+        if nx and name in self._store:
+            exp, _ = self._store[name]
+            if exp is None or exp > now:
+                return False
+        exp = (now + ex) if ex is not None else None
+        self._store[name] = (exp, value)
+        return True
+
+    async def get(self, name: str) -> str | None:
+        import time
+        now = time.monotonic()
+        if name in self._store:
+            exp, val = self._store[name]
+            if exp is None or exp > now:
+                return val
+            del self._store[name]
+        return None
+
+    async def delete(self, name: str) -> int:
+        return 1 if self._store.pop(name, None) is not None else 0
+
+    async def ttl(self, name: str) -> int:
+        import time
+        now = time.monotonic()
+        if name not in self._store:
+            return -2
+        exp, _ = self._store[name]
+        if exp is None:
+            return -1
+        remaining = int(exp - now)
+        return max(0, remaining)
+
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        self._store.clear()
+
+
 # ── Module-level factory ────────────────────────────────────────
-_redis_pool: aioredis.Redis | None = None
+_redis_pool: Any = None
 
 
-async def init_redis() -> aioredis.Redis:
+async def init_redis() -> Any:
     """Create (or return the existing) module-level Redis connection pool.
 
-    Called during application startup.
+    Called during application startup. Falls back to InMemoryRedis if unreachable.
     """
     global _redis_pool  # noqa: PLW0603
     if _redis_pool is None:
         settings = get_settings()
-        _redis_pool = aioredis.from_url(
-            settings.redis_url,
-            max_connections=settings.redis_max_connections,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5,
-            retry_on_timeout=True,
-        )
-        # Verify connectivity
-        await _redis_pool.ping()
-        logger.info("Redis connection pool initialised (%s)", settings.redis_url)
+        try:
+            pool = aioredis.from_url(
+                settings.redis_url,
+                max_connections=settings.redis_max_connections,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                retry_on_timeout=False,
+            )
+            await pool.ping()
+            _redis_pool = pool
+            logger.info("Redis connection pool initialised (%s)", settings.redis_url)
+        except Exception as exc:
+            logger.warning(
+                "Redis connection failed (%s); using in-memory deduplication fallback.",
+                exc,
+            )
+            _redis_pool = InMemoryRedis()
     return _redis_pool
 
 
 async def close_redis() -> None:
-    """Close the Redis connection pool.  Called during application shutdown."""
+    """Close the Redis connection pool. Called during application shutdown."""
     global _redis_pool  # noqa: PLW0603
     if _redis_pool is not None:
-        await _redis_pool.aclose()
+        try:
+            await _redis_pool.aclose()
+        except Exception:
+            pass
         logger.info("Redis connection pool closed")
         _redis_pool = None
 
 
-def get_redis() -> aioredis.Redis:
-    """Return the active Redis client (raises if uninitialised)."""
+def get_redis() -> Any:
+    """Return the active Redis client (or in-memory fallback if uninitialised)."""
+    global _redis_pool
     if _redis_pool is None:
-        raise RuntimeError("Redis is not initialised. Call init_redis() first.")
+        logger.warning("get_redis called before init_redis; initializing in-memory fallback.")
+        _redis_pool = InMemoryRedis()
     return _redis_pool

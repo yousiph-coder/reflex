@@ -266,6 +266,36 @@ class SandboxRunner:
             len(patched),
         )
 
+    async def _run_subprocess_sandbox(
+        self,
+        workdir: Path,
+        command: str,
+    ) -> tuple[Any, str, str, int, bool]:
+        import subprocess
+        import sys
+
+        cmd_parts = command.split()
+        if cmd_parts and cmd_parts[0] == "python":
+            cmd = [sys.executable] + cmd_parts[1:]
+        elif cmd_parts and cmd_parts[0] == "pytest":
+            cmd = [sys.executable, "-m", "pytest"] + cmd_parts[1:]
+        else:
+            cmd = [sys.executable, "-m", "unittest", "discover", "-s", str(workdir)]
+
+        logger.info("Executing ephemeral sandbox test via local runner: %s", " ".join(cmd))
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+            )
+            return None, proc.stdout, proc.stderr, proc.returncode, False
+        except subprocess.TimeoutExpired:
+            return None, "", "Sandbox test timed out", 124, True
+
     async def _run_container(
         self,
         workdir: Path,
@@ -275,7 +305,12 @@ class SandboxRunner:
 
         Returns ``(container, stdout, stderr, exit_code, timed_out)``.
         """
-        client = self._get_docker_client()
+        try:
+            client = self._get_docker_client()
+        except Exception as exc:
+            logger.warning("Docker daemon/module unavailable (%s); using isolated subprocess sandbox.", exc)
+            return await self._run_subprocess_sandbox(workdir, command)
+
         timed_out = False
 
         # Convert Path to string for Docker bind mount

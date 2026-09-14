@@ -239,7 +239,7 @@ async def sentry_webhook(
         status=IncidentStatus.PENDING,
     )
     db.add(incident)
-    await db.flush()  # Populate the auto-generated PK before commit
+    await db.commit()  # Commit so background worker can query it immediately
 
     logger.info(
         "Incident created: id=%s fingerprint=%s error_type=%s",
@@ -266,16 +266,13 @@ async def sentry_webhook(
         level=event.level,
     )
 
-    # NOTE: Worker enqueue would happen here once the task queue module
-    # is implemented.  The internal_event is ready for serialisation:
-    #
-    #   await task_queue.enqueue("analyze_incident", internal_event.to_worker_payload())
-    #
-    # For now we log the payload for observability.
-    logger.info(
-        "Incident %s queued for analysis (worker enqueue pending implementation)",
-        incident.id,
-    )
+    # 11. Enqueue closed-loop remediation worker
+    try:
+        from app.workers.incident_worker import enqueue_incident
+        await enqueue_incident(incident.id)
+        logger.info("Incident %s successfully enqueued for autonomous remediation pipeline.", incident.id)
+    except Exception as exc:
+        logger.error("Failed to enqueue incident %s: %s", incident.id, exc)
 
     # 12. Return 202 Accepted
     return WebhookAckResponse(

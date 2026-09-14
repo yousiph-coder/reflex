@@ -39,6 +39,10 @@ from app.database import close_db, init_db
 def _configure_logging() -> None:
     """Set up structured logging to stdout."""
     settings = get_settings()
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
@@ -52,7 +56,7 @@ def _configure_logging() -> None:
     )
 
     root = logging.getLogger()
-    root.setLevel(settings.log_level)
+    root.setLevel(settings.log_level or "INFO")
     root.handlers.clear()
     root.addHandler(handler)
 
@@ -152,7 +156,7 @@ def create_app() -> FastAPI:
 
         logger = logging.getLogger("app.http")
         logger.info(
-            "%s %s → %d (%.1fms) [%s]",
+            "%s %s -> %d (%.1fms) [%s]",
             request.method,
             request.url.path,
             response.status_code,
@@ -212,8 +216,15 @@ def create_app() -> FastAPI:
         # Check DB
         try:
             engine = get_engine()
-            async with engine.connect() as conn:
-                await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+            from sqlalchemy import text
+            if hasattr(engine, "connect"):
+                conn_ctx = engine.connect()
+                if hasattr(conn_ctx, "__aenter__"):
+                    async with conn_ctx as conn:
+                        await conn.execute(text("SELECT 1"))
+                else:
+                    with conn_ctx as conn:
+                        conn.execute(text("SELECT 1"))
         except Exception as exc:
             errors.append(f"database: {exc}")
 
