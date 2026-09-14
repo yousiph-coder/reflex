@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────
+# Auto-Heal AI — Production Dependencies
+# Python 3.11+
+# ─────────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Async PostgreSQL
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+
+# Async Redis
+redis[hiredis]==5.2.1
+
+# HTTP client (for GitHub API, LLM calls)
+httpx==0.28.1
+
+# Docker SDK (sandbox runner)
+docker==7.1.0
+
+# GitHub App JWT authentication
+PyJWT[crypto]==2.10.1
+cryptography==44.0.0
+
+# Gunicorn (process manager for production)
+gunicorn==23.0.0
+
+# Cryptographic signature verification
+# (stdlib hmac + hashlib are used directly — no extra dep needed)
+
+# Logging / observability
+python-json-logger==3.2.1
