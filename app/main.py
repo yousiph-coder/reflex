@@ -25,8 +25,12 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     analytics_router,
+    billing_router,
     incidents_router,
     organizations_router,
+    repositories,
+    repositories_router,
+    settings_router,
     webhooks_router,
 )
 from app.config import get_settings
@@ -251,6 +255,9 @@ def create_app() -> FastAPI:
     app.include_router(incidents_router, prefix="/api/v1")
     app.include_router(analytics_router, prefix="/api/v1")
     app.include_router(organizations_router, prefix="/api/v1")
+    app.include_router(repositories.router, prefix="/api/v1/repositories", tags=["repositories"])
+    app.include_router(billing_router, prefix="/api/v1")
+    app.include_router(settings_router, prefix="/api/v1")
 
     return app
 

@@ -38,12 +38,21 @@ _API_VERSION = "2022-11-28"
 
 
 def _normalize_private_key(key: str | None) -> str | None:
-    """Normalize multi-line RSA PEM private key from environment variables."""
-    if not key:
+    """Normalize multi-line RSA PEM private key from environment variables or file paths."""
+    import os
+    if key is None:
+        default_path = os.path.join("backend", "secrets", "github_app.pem")
+        if os.path.isfile(default_path):
+            with open(default_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
         return None
     cleaned = key.strip().strip("'\"")
-    # Convert escaped newlines into real newlines if passed in .env
-    if "\\n" in cleaned:
+    if not cleaned:
+        return None
+    if os.path.isfile(cleaned):
+        with open(cleaned, "r", encoding="utf-8") as f:
+            cleaned = f.read().strip()
+    elif "\\n" in cleaned:
         cleaned = cleaned.replace("\\n", "\n")
     return cleaned
 
@@ -78,11 +87,19 @@ class GitHubService:
         self._default_branch = default_branch or settings.github_default_branch
 
         # GitHub App authentication credentials
-        self._app_id = str(app_id or settings.github_app_id or "")
-        raw_key = app_private_key or (
-            settings.github_private_key.get_secret_value()
-            if settings.github_private_key
-            else None
+        self._app_id = (
+            str(app_id)
+            if app_id is not None
+            else str(settings.github_app_id or "")
+        )
+        raw_key = (
+            app_private_key
+            if app_private_key is not None
+            else (
+                settings.github_private_key.get_secret_value()
+                if settings.github_private_key
+                else None
+            )
         )
         self._app_private_key = _normalize_private_key(raw_key)
         self._installation_id = str(installation_id or "") if installation_id else None
@@ -144,6 +161,68 @@ class GitHubService:
         }
         return pyjwt.encode(payload, self._app_private_key, algorithm="RS256")
 
+    def generate_jwt(self) -> str:
+        """Public method for generating RS256 GitHub App JWT."""
+        return self._generate_app_jwt()
+
+    async def get_repo_installation(
+        self, owner: str | None = None, repo: str | None = None
+    ) -> dict[str, Any] | None:
+        """Dynamically fetch the installation metadata for a repository using the App JWT."""
+        target_owner = owner or self._owner
+        target_repo = repo or self._repo
+        if not target_owner or not target_repo or not self._app_id or not self._app_private_key:
+            return None
+
+        app_jwt = self._generate_app_jwt()
+        client = self._get_client()
+        resp = await client.get(
+            f"{_GITHUB_API}/repos/{target_owner}/{target_repo}/installation",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": _ACCEPT_JSON,
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+        )
+        if resp.status_code == 404:
+            logger.info("GitHub App is not installed on repository %s/%s", target_owner, target_repo)
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_app_installations(self) -> list[dict[str, Any]]:
+        """List all GitHub App installations using the RS256 App JWT."""
+        app_jwt = self._generate_app_jwt()
+        client = self._get_client()
+        resp = await client.get(
+            f"{_GITHUB_API}/app/installations",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": _ACCEPT_JSON,
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_installation_repositories(
+        self, installation_id: str | int
+    ) -> list[dict[str, Any]]:
+        """List repositories accessible to a specific app installation."""
+        token = await self.get_installation_token(installation_id)
+        client = self._get_client()
+        resp = await client.get(
+            f"{_GITHUB_API}/installation/repositories",
+            headers={
+                "Authorization": f"token {token}",
+                "Accept": _ACCEPT_JSON,
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("repositories", [])
+
     async def get_installation_token(self, installation_id: str | int) -> str:
         """Dynamically exchange App JWT for an installation access token (cached for ~55 min)."""
         inst_key = str(installation_id)
@@ -183,8 +262,22 @@ class GitHubService:
 
     async def _get_auth_token(self) -> str:
         """Return the best available auth token (installation token or fallback PAT)."""
-        if self._installation_id and self._app_id and self._app_private_key:
-            return await self.get_installation_token(self._installation_id)
+        if self._app_id and self._app_private_key:
+            if not self._installation_id and self._owner and self._repo:
+                try:
+                    install_info = await self.get_repo_installation()
+                    if install_info and "id" in install_info:
+                        self._installation_id = str(install_info["id"])
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to dynamically look up installation for %s/%s: %s",
+                        self._owner,
+                        self._repo,
+                        exc,
+                    )
+
+            if self._installation_id:
+                return await self.get_installation_token(self._installation_id)
 
         if self._installation_token:
             if time.time() >= self._installation_token_expires:

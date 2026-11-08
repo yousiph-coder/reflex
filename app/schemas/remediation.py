@@ -365,3 +365,4 @@ class IncidentContext(BaseModel):
     repo_owner: str = ""
     repo_name: str = ""
     default_branch: str = "main"
+    language: str | None = None

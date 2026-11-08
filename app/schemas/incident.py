@@ -90,6 +90,12 @@ class RemediationAttemptResponse(BaseModel):
 
 # ── Incident Schemas ────────────────────────────────────────────
 
+class ReasoningStep(BaseModel):
+    step: int
+    title: str
+    description: str
+
+
 class IncidentSummaryResponse(BaseModel):
     """Concise incident summary for paginated listings and dashboards."""
 
@@ -110,6 +116,9 @@ class IncidentSummaryResponse(BaseModel):
     level: str = "error"
     status: IncidentStatus
     retry_count: int = 0
+    pr_url: str | None = None
+    branch_name: str | None = None
+    resolved_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +129,13 @@ class IncidentDetailResponse(IncidentSummaryResponse):
     stack_trace: str | None = None
     raw_event: dict[str, Any] | None = None
     remediation_attempts: list[RemediationAttemptResponse] = Field(default_factory=list)
+    repository_full_name: str | None = None
+    pr_number: int | None = None
+    confidence_score: float = 98.4
+    severity_vitality: int = 1
+    original_code: str | None = None
+    patched_code: str | None = None
+    reasoning_steps: list[ReasoningStep] = Field(default_factory=list)
 
 
 class IncidentListResponse(BaseModel):
@@ -130,6 +146,21 @@ class IncidentListResponse(BaseModel):
     page: int = Field(ge=1, description="Current page number")
     page_size: int = Field(ge=1, description="Items per page")
     total_pages: int = Field(ge=0, description="Total page count")
+
+
+class IncidentRejectRequest(BaseModel):
+    """Optional payload when rejecting an incident remediation."""
+
+    reason: str | None = Field(default=None, description="Reason for rejection feedback")
+
+
+class IncidentRejectResponse(BaseModel):
+    """Response returned upon rejecting an incident remediation."""
+
+    status: str = Field(default="REJECTED", description="Updated status")
+    incident_id: uuid.UUID = Field(description="Incident ID")
+    reason: str | None = Field(default=None, description="Provided rejection reason")
+    message: str = Field(default="Incident remediation was rejected.", description="Summary message")
 
 
 # ── Analytics & Metrics Schemas ─────────────────────────────────

@@ -200,15 +200,51 @@ async def sentry_webhook(
     # 10. Resolve tenant organization and persist incident to PostgreSQL
     from app.core.security import hash_api_key
     from app.models.organization import APIKey, Organization
+    from app.models.repository import Repository, SentryProjectMapping
 
-    x_api_key = request.headers.get("X-API-Key")
+    # Extract project slug from payload or request context
+    project_slug = (
+        raw_json.get("data", {}).get("event", {}).get("project_slug")
+        or raw_json.get("data", {}).get("event", {}).get("project")
+        or raw_json.get("project_slug")
+        or raw_json.get("project")
+        or request.query_params.get("project_slug")
+        or request.query_params.get("project")
+    )
+    if isinstance(project_slug, int):
+        project_slug = str(project_slug)
+
     org_id = None
-    if x_api_key:
-        hashed = hash_api_key(x_api_key.strip())
-        org_stmt = select(APIKey.organization_id).where(APIKey.hashed_key == hashed, APIKey.is_active == True)
-        res = await db.execute(org_stmt)
-        org_id = res.scalar_one_or_none()
 
+    # Option A: Resolve organization via Repository Sentry Mapping
+    if project_slug:
+        mapping_stmt = (
+            select(Repository.organization_id)
+            .join(SentryProjectMapping, SentryProjectMapping.repository_id == Repository.id)
+            .where(
+                SentryProjectMapping.sentry_project_slug == str(project_slug),
+                Repository.is_active == True,
+            )
+            .limit(1)
+        )
+        mapping_res = await db.execute(mapping_stmt)
+        matched_org_id = mapping_res.scalar_one_or_none()
+        if matched_org_id:
+            try:
+                org_id = uuid.UUID(str(matched_org_id))
+            except ValueError:
+                org_id = matched_org_id
+
+    # Option B: Resolve organization via API key / unique webhook secret
+    if org_id is None:
+        x_api_key = request.headers.get("X-API-Key") or request.query_params.get("secret")
+        if x_api_key:
+            hashed = hash_api_key(x_api_key.strip())
+            org_stmt = select(APIKey.organization_id).where(APIKey.hashed_key == hashed, APIKey.is_active == True)
+            res = await db.execute(org_stmt)
+            org_id = res.scalar_one_or_none()
+
+    # Option C: Fallback to default organization
     if org_id is None:
         default_org_res = await db.execute(select(Organization.id).order_by(Organization.created_at.asc()).limit(1))
         org_id = default_org_res.scalar_one_or_none()
@@ -232,7 +268,7 @@ async def sentry_webhook(
         line_number=line_number,
         stack_trace=stack_trace,
         raw_event=scrubbed_raw_event,
-        project_slug=None,  # Sentry project slug is in the installation context
+        project_slug=str(project_slug) if project_slug else None,
         environment=event.environment,
         platform=event.platform,
         level=event.level,
@@ -363,12 +399,76 @@ async def github_webhook(
             installation_id,
             account,
         )
+
+        from app.models.organization import Organization
+        from app.models.repository import Repository
+
+        repos_added = payload.get("repositories", []) or payload.get("repositories_added", [])
+        installed_names: list[str] = []
+
+        if action in ("created", "added") and repos_added:
+            try:
+                org_res = await db.execute(select(Organization).limit(1))
+                org = org_res.scalars().first()
+                if org:
+                    for r in repos_added:
+                        full_name = r.get("full_name", "")
+                        if "/" in full_name:
+                            r_owner, r_name = full_name.split("/", 1)
+                        else:
+                            r_owner, r_name = account, r.get("name", "")
+                        if r_owner and r_name:
+                            stmt = select(Repository).where(
+                                Repository.organization_id == str(org.id),
+                                Repository.repo_owner == r_owner,
+                                Repository.repo_name == r_name,
+                            )
+                            existing = (await db.execute(stmt)).scalars().first()
+                            if not existing:
+                                new_repo = Repository(
+                                    organization_id=str(org.id),
+                                    repo_owner=r_owner,
+                                    repo_name=r_name,
+                                    default_branch=r.get("default_branch", "main"),
+                                    is_private=r.get("private", True),
+                                    is_active=True,
+                                )
+                                db.add(new_repo)
+                            else:
+                                existing.is_active = True
+                            installed_names.append(f"{r_owner}/{r_name}")
+                    await db.commit()
+            except Exception as exc:
+                logger.warning("Failed to auto-register installed repositories: %s", exc)
+
+        elif action in ("deleted", "removed"):
+            try:
+                repos_removed = payload.get("repositories_removed", []) or payload.get("repositories", [])
+                for r in repos_removed:
+                    full_name = r.get("full_name", "")
+                    if "/" in full_name:
+                        r_owner, r_name = full_name.split("/", 1)
+                    else:
+                        r_owner, r_name = account, r.get("name", "")
+                    if r_owner and r_name:
+                        stmt = select(Repository).where(
+                            Repository.repo_owner == r_owner,
+                            Repository.repo_name == r_name,
+                        )
+                        existing = (await db.execute(stmt)).scalars().first()
+                        if existing:
+                            existing.is_active = False
+                await db.commit()
+            except Exception as exc:
+                logger.warning("Failed to deactivate removed repositories: %s", exc)
+
         return {
             "status": "processed",
             "event": x_github_event,
             "action": action,
             "installation_id": installation_id,
             "account": account,
+            "repositories": installed_names,
         }
 
     # 5. Handle 'pull_request' lifecycle events

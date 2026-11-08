@@ -15,11 +15,14 @@ import {
   ShieldCheck,
   Terminal,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface StepData {
   id: string;
   badge: string;
   badgeColor: string;
+  activeColorClass: string;
+  glowClass: string;
   title: string;
   subtitle: string;
   code: string;
@@ -31,7 +34,9 @@ const STEPS: StepData[] = [
   {
     id: "ingest",
     badge: "01. Crash Ingestion",
-    badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+    badgeColor: "bg-rose-500/10 text-rose-500 dark:text-rose-400 border-rose-500/20",
+    activeColorClass: "border-b-rose-500 text-rose-600 dark:text-rose-400 bg-rose-500/5",
+    glowClass: "shadow-glow-crimson",
     title: "Sentry Alert Ingested & PII Redacted",
     subtitle: "Inbound HMAC-SHA256 validated webhook. Sensitive JWTs and tokens scrubbed.",
     code: `[16:42:11] SENTRY WEBHOOK RECEIVED (X-Hub-Signature-256: 3a9f... valid)
@@ -48,7 +53,9 @@ const STEPS: StepData[] = [
   {
     id: "reason",
     badge: "02. AI Root Cause",
-    badgeColor: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    badgeColor: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+    activeColorClass: "border-b-purple-500 text-purple-600 dark:text-purple-400 bg-purple-500/5",
+    glowClass: "shadow-[0_0_15px_rgba(168,85,247,0.35)]",
     title: "AST Context Retrieval & Patch Synthesis",
     subtitle: "Fetched GitHub blame & AST file window. Synthesized safe dictionary lookup.",
     code: `--- a/app/services/auth.py
@@ -70,7 +77,9 @@ const STEPS: StepData[] = [
   {
     id: "sandbox",
     badge: "03. Sandbox Runner",
-    badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    activeColorClass: "border-b-amber-500 text-amber-600 dark:text-amber-400 bg-amber-500/5",
+    glowClass: "shadow-glow-amber",
     title: "Docker Ephemeral Container Verification",
     subtitle: "Executed patch in isolated sandbox with dropped privileges and network disabled.",
     code: `[SANDBOX] Spawning container: autoheal-sandbox-8f4b7a
@@ -91,7 +100,9 @@ tests/test_auth.py .....                                                 [100%]
   {
     id: "pr",
     badge: "04. Automated PR",
-    badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    activeColorClass: "border-b-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
+    glowClass: "shadow-glow-emerald",
     title: "Atomic Branch Committed & PR Opened",
     subtitle: "PR opened on target repository. Multi-channel notifications delivered.",
     code: `[GITHUB] Git Data API: Blob created (SHA: 4d28e7...)
@@ -118,51 +129,63 @@ export function TerminalMockup() {
   const currentStep = STEPS.find((s) => s.id === activeTab) || STEPS[3];
 
   return (
-    <div className="w-full max-w-4xl mx-auto rounded-2xl border border-zinc-800 bg-[#0d0d10]/90 backdrop-blur-xl shadow-2xl shadow-emerald-500/5 overflow-hidden transition-all">
+    <div className="w-full max-w-4xl mx-auto rounded-2xl border border-zinc-200 dark:border-white/10 liquid-glass-elevated shadow-2xl overflow-hidden transition-all text-left">
       {/* ── Terminal Chrome Header ───────────────────────────────── */}
-      <div className="px-4 py-3 bg-[#131317] border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-4 py-3 bg-zinc-100/70 dark:bg-black/60 border-b border-zinc-200 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-rose-500/80" />
-            <div className="w-3 h-3 rounded-full bg-amber-500/80" />
-            <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+            <div className="w-3 h-3 rounded-full bg-rose-500/90 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+            <div className="w-3 h-3 rounded-full bg-amber-500/90 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+            <div className="w-3 h-3 rounded-full bg-emerald-500/90 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
           </div>
-          <span className="text-xs font-mono text-zinc-400 ml-2 flex items-center gap-1.5">
-            <Terminal className="w-3.5 h-3.5 text-zinc-500" />
+          <span className="text-xs font-mono text-zinc-600 dark:text-zinc-400 ml-2 flex items-center gap-1.5">
+            <Terminal className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
             autoheal-core ~ incident-pipeline
           </span>
         </div>
 
         {/* Status indicator */}
-        <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
+        <div className="flex items-center gap-2 text-xs font-mono text-emerald-600 dark:text-emerald-400">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-glow-emerald"></span>
           </span>
           Autonomous Loop Active
         </div>
       </div>
 
       {/* ── Step Selection Tabs ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 border-b border-zinc-800/80 bg-[#111114]">
+      <div className="grid grid-cols-2 sm:grid-cols-4 border-b border-zinc-200 dark:border-white/10 bg-zinc-50/60 dark:bg-black/40">
         {STEPS.map((step) => {
           const isActive = activeTab === step.id;
           return (
             <button
               key={step.id}
               onClick={() => setActiveTab(step.id)}
-              className={`px-4 py-3 text-left transition-all border-b-2 sm:border-b-0 sm:border-r border-zinc-800/80 last:border-r-0 ${
+              className={cn(
+                "px-4 py-3.5 text-left transition-all border-b-2 sm:border-b-0 sm:border-r border-zinc-200 dark:border-white/10 last:border-r-0 font-mono",
                 isActive
-                  ? "bg-zinc-800/40 border-b-emerald-500 sm:border-r-zinc-700"
-                  : "hover:bg-zinc-900/40 opacity-70 hover:opacity-100"
-              }`}
+                  ? cn(step.activeColorClass, "shadow-inner")
+                  : "hover:bg-zinc-100/50 dark:hover:bg-white/5 opacity-70 hover:opacity-100"
+              )}
             >
               <div className="flex items-center gap-1.5 mb-1">
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${step.badgeColor}`}>
+                <span
+                  className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded border font-semibold",
+                    step.badgeColor,
+                    isActive && step.glowClass
+                  )}
+                >
                   {step.badge.split(" ")[0]}
                 </span>
               </div>
-              <p className={`text-xs font-semibold truncate ${isActive ? "text-white" : "text-zinc-400"}`}>
+              <p
+                className={cn(
+                  "text-xs font-semibold truncate",
+                  isActive ? "text-zinc-900 dark:text-white" : "text-zinc-500 dark:text-zinc-400"
+                )}
+              >
                 {step.badge.split(" ").slice(1).join(" ")}
               </p>
             </button>
@@ -181,12 +204,12 @@ export function TerminalMockup() {
           className="p-5 sm:p-6 space-y-4"
         >
           {/* Header Info */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/60">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-white/10">
             <div>
-              <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <h4 className="text-sm sm:text-base font-bold font-mono text-zinc-900 dark:text-white flex items-center gap-2">
                 {currentStep.title}
               </h4>
-              <p className="text-xs text-zinc-400 mt-0.5">{currentStep.subtitle}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{currentStep.subtitle}</p>
             </div>
 
             {currentStep.actionLink && (
@@ -194,7 +217,7 @@ export function TerminalMockup() {
                 href={currentStep.actionLink.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-medium text-xs transition-colors whitespace-nowrap self-start sm:self-auto"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-medium text-xs font-mono shadow-glow-emerald transition-all whitespace-nowrap self-start sm:self-auto"
               >
                 <span>{currentStep.actionLink.text}</span>
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -202,8 +225,8 @@ export function TerminalMockup() {
             )}
           </div>
 
-          {/* Code/Terminal Output Block */}
-          <div className="rounded-xl border border-zinc-800 bg-[#060608] p-4 font-mono text-xs text-zinc-300 overflow-x-auto leading-relaxed shadow-inner">
+          {/* Code/Terminal Output Block - OLED Pure Black */}
+          <div className="rounded-xl border border-zinc-800 bg-[#000000] p-4 font-mono text-xs text-zinc-300 overflow-x-auto leading-relaxed shadow-inner">
             <pre className="whitespace-pre">
               {currentStep.code}
             </pre>
@@ -214,10 +237,10 @@ export function TerminalMockup() {
             {currentStep.meta.map((m, idx) => (
               <div
                 key={idx}
-                className="px-3 py-2 rounded-lg bg-zinc-900/50 border border-zinc-800/80 flex items-center justify-between text-xs"
+                className="px-3.5 py-2 rounded-xl liquid-glass border border-zinc-200 dark:border-white/10 flex items-center justify-between text-xs"
               >
-                <span className="text-zinc-500">{m.label}:</span>
-                <span className="font-mono font-medium text-zinc-200">{m.value}</span>
+                <span className="text-zinc-500 dark:text-zinc-400">{m.label}:</span>
+                <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{m.value}</span>
               </div>
             ))}
           </div>

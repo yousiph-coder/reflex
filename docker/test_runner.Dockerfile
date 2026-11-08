@@ -1,25 +1,34 @@
 # ─────────────────────────────────────────────────────────────────
-# Auto-Heal AI — Ephemeral Sandbox Test Runner
+# Auto-Heal AI — Ephemeral Multi-Runtime Sandbox Test Runner
 #
-# Lightweight Python image pre-loaded with common test tooling.
+# Multi-runtime ephemeral sandbox image with Python 3.11 + Node.js 20 LTS.
 # Containers built from this image are spun up per-incident,
 # receive the patched code via a bind-mount at /workspace,
-# run the test suite, and are destroyed immediately after.
+# run the test suite (pytest, jest, ts-node, etc.), and are destroyed.
 # ─────────────────────────────────────────────────────────────────
 
 FROM python:3.11-slim AS base
 
 LABEL maintainer="auto-heal-ai"
-LABEL description="Ephemeral sandbox for validating remediation patches"
+LABEL description="Ephemeral multi-runtime sandbox for validating Python and Node.js remediation patches"
 
-# ── OS-level deps ───────────────────────────────────────────────
+# ── OS-level deps & Node.js 20 LTS ──────────────────────────────
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
         curl \
         gcc \
         libpq-dev \
-        && rm -rf /var/lib/apt/lists/*
+        ca-certificates \
+        gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Global Node test runners ────────────────────────────────────
+RUN npm install -g jest ts-node typescript
 
 # ── Python test tooling ────────────────────────────────────────
 RUN pip install --no-cache-dir \

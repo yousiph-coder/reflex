@@ -154,12 +154,22 @@ class SandboxRunner:
 
             # ── 4. Write requirements if any ────────────────────
             command_parts: list[str] = []
+            is_node_cmd = any(
+                unit_test.test_command.strip().startswith(prefix)
+                for prefix in ("npm", "npx", "node", "yarn", "pnpm")
+            ) or unit_test.test_framework.lower() in ("jest", "vitest", "mocha", "node")
+
             if requirements:
                 req_file = workdir / "_sandbox_requirements.txt"
                 req_file.write_text("\n".join(requirements), encoding="utf-8")
-                command_parts.append(
-                    "pip install --quiet -r /workspace/_sandbox_requirements.txt &&"
-                )
+                if not is_node_cmd:
+                    command_parts.append(
+                        "pip install --quiet -r /workspace/_sandbox_requirements.txt &&"
+                    )
+                else:
+                    command_parts.append(
+                        f"npm install --no-audit --no-fund {' '.join(requirements)} &&"
+                    )
             command_parts.append(unit_test.test_command)
             full_command = " ".join(command_parts)
 
@@ -274,11 +284,94 @@ class SandboxRunner:
         import subprocess
         import sys
 
-        cmd_parts = command.split()
-        if cmd_parts and cmd_parts[0] == "python":
+        NODE_RUNNERS = ("npm", "npx", "node", "yarn", "pnpm")
+
+        cmd_str = command
+        # Handle chained commands if any (e.g. "pre_cmd && test_cmd")
+        if "&&" in command:
+            subcmds = [s.strip() for s in command.split("&&")]
+            for pre in subcmds[:-1]:
+                pre_parts = pre.split()
+                if not pre_parts:
+                    continue
+                pre_first = pre_parts[0]
+                if pre_first == "pip":
+                    pre_cmd = [sys.executable, "-m", "pip"] + pre_parts[1:]
+                elif pre_first in NODE_RUNNERS:
+                    pre_bin = shutil.which(pre_first) or pre_first
+                    pre_cmd = [pre_bin] + pre_parts[1:]
+                else:
+                    pre_cmd = pre_parts
+                try:
+                    await asyncio.to_thread(
+                        subprocess.run,
+                        pre_cmd,
+                        cwd=str(workdir),
+                        capture_output=True,
+                        text=True,
+                        timeout=self._timeout,
+                    )
+                except Exception as exc:
+                    logger.warning("Sandbox prerequisite command '%s' failed: %s", pre, exc)
+            cmd_str = subcmds[-1]
+
+        cmd_parts = cmd_str.split()
+        first_token = cmd_parts[0] if cmd_parts else ""
+
+        # If package.json or JS/TS test requirements are provided, install them before running tests
+        is_node_target = first_token in NODE_RUNNERS or (workdir / "package.json").exists()
+        if is_node_target:
+            npm_bin = shutil.which("npm")
+            if npm_bin:
+                pkg_json = workdir / "package.json"
+                node_modules = workdir / "node_modules"
+                if pkg_json.exists() and not node_modules.exists():
+                    logger.info("Installing dependencies from package.json in %s", workdir)
+                    try:
+                        await asyncio.to_thread(
+                            subprocess.run,
+                            [npm_bin, "install", "--no-audit", "--no-fund"],
+                            cwd=str(workdir),
+                            capture_output=True,
+                            text=True,
+                            timeout=min(self._timeout, 60),
+                        )
+                    except Exception as exc:
+                        logger.warning("npm install from package.json failed: %s", exc)
+
+                req_file = workdir / "_sandbox_requirements.txt"
+                if req_file.exists():
+                    req_lines = [
+                        line.strip()
+                        for line in req_file.read_text(encoding="utf-8").splitlines()
+                        if line.strip() and not line.strip().startswith("#")
+                    ]
+                    if req_lines and first_token in NODE_RUNNERS:
+                        logger.info("Installing JS/TS requirements %s in %s", req_lines, workdir)
+                        try:
+                            await asyncio.to_thread(
+                                subprocess.run,
+                                [npm_bin, "install", "--no-audit", "--no-fund"] + req_lines,
+                                cwd=str(workdir),
+                                capture_output=True,
+                                text=True,
+                                timeout=min(self._timeout, 60),
+                            )
+                        except Exception as exc:
+                            logger.warning("npm install of JS/TS requirements failed: %s", exc)
+
+        # Build command with resolved runner executables
+        if first_token in NODE_RUNNERS:
+            resolved_bin = shutil.which(first_token)
+            if not resolved_bin:
+                logger.warning("Node.js runner '%s' not found on PATH; attempting direct invocation", first_token)
+            cmd = [resolved_bin or first_token] + cmd_parts[1:]
+        elif first_token == "python":
             cmd = [sys.executable] + cmd_parts[1:]
-        elif cmd_parts and cmd_parts[0] == "pytest":
+        elif first_token == "pytest":
             cmd = [sys.executable, "-m", "pytest"] + cmd_parts[1:]
+        elif first_token == "unittest":
+            cmd = [sys.executable, "-m", "unittest"] + cmd_parts[1:]
         else:
             cmd = [sys.executable, "-m", "unittest", "discover", "-s", str(workdir)]
 

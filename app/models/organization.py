@@ -19,11 +19,13 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Enum,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     UniqueConstraint,
@@ -36,6 +38,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.incident import Incident, RemediationAttempt
+    from app.models.tenant import OrganizationMember
 
 
 def _utcnow() -> datetime:
@@ -84,12 +87,72 @@ class Organization(Base):
         index=True,
         comment="Subscription tier for rate limits and features",
     )
+    plan: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="free",
+        server_default="free",
+        comment="Subscription plan: free | pro | enterprise",
+    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        index=True,
+        default=None,
+        comment="Stripe Customer ID",
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        index=True,
+        default=None,
+        comment="Stripe Subscription ID",
+    )
+    monthly_heals_used: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Monthly remediations used",
+    )
+    subscription_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="active",
+        server_default="active",
+        comment="Subscription status: active | canceled | past_due",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=True,
         index=True,
         comment="Whether the organization account is active",
+    )
+    github_installation_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        nullable=True,
+        index=True,
+        comment="Linked GitHub App installation ID",
+    )
+    discord_webhook_url: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+        default=None,
+        comment="Discord webhook URL for notifications",
+    )
+    slack_webhook_url: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+        default=None,
+        comment="Slack incoming webhook URL for notifications",
+    )
+    alerts_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+        comment="Whether webhook alerts are enabled for this organization",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -116,6 +179,12 @@ class Organization(Base):
         back_populates="organization",
         cascade="all, delete-orphan",
         order_by="Incident.created_at.desc()",
+        lazy="selectin",
+    )
+    members: Mapped[list["OrganizationMember"]] = relationship(
+        "OrganizationMember",
+        back_populates="organization",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 

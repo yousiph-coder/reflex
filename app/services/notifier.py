@@ -230,6 +230,67 @@ class Notifier:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def notify_awaiting_approval(
+        self,
+        *,
+        incident_id: str,
+        title: str,
+        error_type: str = "Error",
+        confidence_score: float = 0.0,
+        summary: str = "",
+    ) -> None:
+        """Dispatch alert when a remediation is awaiting manual human approval."""
+        tasks = []
+
+        if self._slack_url:
+            slack_payload = {
+                "attachments": [
+                    {
+                        "color": "#3498DB",
+                        "blocks": [
+                            {
+                                "type": "header",
+                                "text": {"type": "plain_text", "text": "⏳ Remediation ready for review: Awaiting Approval", "emoji": True},
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"*{title}*\n*Error Type:* `{error_type}`\n*Confidence:* {confidence_score:.0%}\n\n{summary}"[:3000],
+                                },
+                            },
+                            {
+                                "type": "context",
+                                "elements": [{"type": "mrkdwn", "text": f"Incident ID: `{incident_id}`"}],
+                            },
+                        ],
+                    }
+                ]
+            }
+            tasks.append(self._post_webhook(self._slack_url, slack_payload, "Slack"))
+
+        if self._discord_url:
+            discord_payload = {
+                "username": "Auto-Heal AI",
+                "embeds": [
+                    {
+                        "title": "Remediation ready for review: Awaiting Approval"[:256],
+                        "description": f"**{title}**\n\n{summary}"[:2048],
+                        "color": 0x3498DB,
+                        "fields": [
+                            {"name": "Error Type", "value": f"`{error_type}`", "inline": True},
+                            {"name": "Confidence", "value": f"{confidence_score:.0%}", "inline": True},
+                            {"name": "Incident ID", "value": f"`{incident_id}`", "inline": True},
+                        ],
+                        "footer": {"text": "Manual approval required to open PR"},
+                    }
+                ],
+            }
+            tasks.append(self._post_webhook(self._discord_url, discord_payload, "Discord"))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     # ── Slack Block Kit Formatter ───────────────────────────────
 
     def _build_slack_pr_opened_payload(

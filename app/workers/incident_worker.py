@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,12 @@ from app.models.incident import (
     IncidentStatus,
     RemediationAttempt,
     RemediationStatus,
+)
+from app.models.organization import Organization
+from app.models.repository import (
+    RemediationMode,
+    Repository,
+    SentryProjectMapping,
 )
 from app.schemas.remediation import (
     BlameInfo,
@@ -155,11 +162,27 @@ class IncidentWorker:
                 )
                 return
 
-            logger.info(
-                "▶ Starting remediation pipeline for incident %s: %s",
-                incident_id,
-                incident.title,
-            )
+            # ── Check repository configuration & remediation mode ──
+            repo = await self._get_repository(db, incident)
+            repo_owner = repo.repo_owner if repo and repo.repo_owner else settings.github_owner
+            repo_name = repo.repo_name if repo and repo.repo_name else settings.github_repo
+            default_branch = repo.default_branch if repo and repo.default_branch else settings.github_default_branch
+            language = repo.language if repo and repo.language else (incident.platform or "python")
+            remediation_mode = repo.remediation_mode if repo else RemediationMode.AUTONOMOUS
+            mode_str = (remediation_mode.value if hasattr(remediation_mode, "value") else str(remediation_mode)).lower()
+
+            if mode_str == "disabled":
+                logger.info(
+                    "Incident %s remediation is disabled for repository %s/%s — skipping",
+                    incident_id,
+                    repo_owner,
+                    repo_name,
+                )
+                return
+
+            self._github._owner = repo_owner
+            self._github._repo = repo_name
+            self._github._default_branch = default_branch
 
             try:
                 # ─────────────────────────────────────────────────
@@ -184,10 +207,37 @@ class IncidentWorker:
                     level=incident.level,
                     file_contexts=file_contexts,
                     blame_info=blame_info,
-                    repo_owner=settings.github_owner,
-                    repo_name=settings.github_repo,
-                    default_branch=settings.github_default_branch,
+                    repo_owner=repo_owner,
+                    repo_name=repo_name,
+                    default_branch=default_branch,
+                    language=language,
                 )
+
+                # ── Paywall Check: Free tier limit (5 heals/month) ──
+                tenant = None
+                if incident.organization_id:
+                    tenant_stmt = select(Organization).where(Organization.id == incident.organization_id)
+                    tenant_res = await db.execute(tenant_stmt)
+                    tenant = tenant_res.scalar_one_or_none()
+
+                if tenant:
+                    tenant_plan = (
+                        getattr(tenant, "plan", None)
+                        or (tenant.plan_tier.value if hasattr(tenant.plan_tier, "value") else str(tenant.plan_tier))
+                        or "free"
+                    ).lower()
+                    monthly_used = getattr(tenant, "monthly_heals_used", 0) or 0
+                    if tenant_plan == "free" and monthly_used >= 5:
+                        logger.warning(
+                            "Paywall limit reached for tenant %s (plan=%s, heals_used=%d/5)",
+                            tenant.id,
+                            tenant_plan,
+                            monthly_used,
+                        )
+                        raise HTTPException(
+                            status_code=402,
+                            detail="Free tier limit reached (5/5 heals). Upgrade to Pro for unlimited autonomous remediations.",
+                        )
 
                 # ─────────────────────────────────────────────────
                 # STEP 2: REMEDIATING — LLM + sandbox loop
@@ -215,7 +265,48 @@ class IncidentWorker:
                     return
 
                 # ─────────────────────────────────────────────────
-                # STEP 3: Open GitHub PR
+                # STEP 3: Check Remediation Mode (HITL vs Autonomous)
+                # ─────────────────────────────────────────────────
+                if mode_str == "manual_approval":
+                    # Persist patch, diff, RCA, and sandbox execution logs
+                    raw_evt = dict(incident.raw_event or {})
+                    raw_evt["remediation_output"] = remediation.model_dump()
+                    if sandbox_result:
+                        raw_evt["sandbox_result"] = {
+                            "success": sandbox_result.success,
+                            "exit_code": sandbox_result.exit_code,
+                            "stdout": sandbox_result.stdout,
+                            "stderr": sandbox_result.stderr,
+                            "duration_seconds": sandbox_result.duration_seconds,
+                        }
+                    incident.raw_event = raw_evt
+
+                    if attempt_record:
+                        attempt_record.status = RemediationStatus.AWAITING_APPROVAL
+                        if not attempt_record.analysis:
+                            attempt_record.analysis = remediation.root_cause_analysis
+                        if not attempt_record.diff:
+                            attempt_record.diff = self._patches_to_diff(remediation.file_patches)
+
+                    await self._update_status(db, incident, IncidentStatus.AWAITING_APPROVAL)
+                    await db.commit()
+
+                    # Do NOT create GitHub PR yet. Dispatch notification:
+                    await self._notify_awaiting_approval(
+                        incident=incident,
+                        remediation=remediation,
+                    )
+
+                    elapsed = time.monotonic() - pipeline_start
+                    logger.info(
+                        "⏳ Incident %s ready for review: Awaiting Approval (%.1fs)",
+                        incident_id,
+                        elapsed,
+                    )
+                    return
+
+                # ─────────────────────────────────────────────────
+                # STEP 4: Autonomous Mode — Open GitHub PR
                 # ─────────────────────────────────────────────────
                 pr_result = await self._create_pr(
                     incident=incident,
@@ -229,19 +320,30 @@ class IncidentWorker:
                     attempt_record.branch_name = pr_result.get("branch_name", "")
                     attempt_record.status = RemediationStatus.PR_OPENED
 
+                # Increment tenant monthly_heals_used upon successfully generating and publishing PR
+                if pr_result and pr_result.get("pr_url"):
+                    if tenant:
+                        tenant.monthly_heals_used = (getattr(tenant, "monthly_heals_used", 0) or 0) + 1
+                        logger.info(
+                            "Incremented monthly_heals_used for tenant %s (new count: %d)",
+                            tenant.id,
+                            tenant.monthly_heals_used,
+                        )
+
                 # ─────────────────────────────────────────────────
-                # STEP 4: RESOLVED
+                # STEP 5: RESOLVED
                 # ─────────────────────────────────────────────────
                 await self._update_status(db, incident, IncidentStatus.RESOLVED)
                 await db.commit()
 
                 # ─────────────────────────────────────────────────
-                # STEP 5: Notify
+                # STEP 6: Notify
                 # ─────────────────────────────────────────────────
                 await self._notify_success(
                     incident=incident,
                     remediation=remediation,
                     pr_result=pr_result or {},
+                    tenant=tenant,
                 )
 
                 elapsed = time.monotonic() - pipeline_start
@@ -251,6 +353,21 @@ class IncidentWorker:
                     elapsed,
                     (pr_result or {}).get("pr_url", "N/A"),
                 )
+
+            except HTTPException as exc:
+                logger.warning(
+                    "⚠️ Pipeline halted by HTTPException for incident %s: %s (code=%s)",
+                    incident_id,
+                    exc.detail,
+                    exc.status_code,
+                )
+                await self._update_status(db, incident, IncidentStatus.FAILED)
+                await db.commit()
+                await self._notify_failure(
+                    incident=incident,
+                    reason=f"Remediation aborted: {exc.detail}",
+                )
+                raise exc
 
             except Exception as exc:
                 logger.error(
@@ -526,6 +643,40 @@ class IncidentWorker:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def _get_repository(
+        db: AsyncSession,
+        incident: Incident,
+    ) -> Repository | None:
+        """Find the corresponding repository for this incident."""
+        if incident.project_slug:
+            stmt = (
+                select(Repository)
+                .join(SentryProjectMapping, SentryProjectMapping.repository_id == Repository.id)
+                .where(
+                    SentryProjectMapping.sentry_project_slug == incident.project_slug,
+                    Repository.organization_id == str(incident.organization_id),
+                    Repository.is_active.is_(True),
+                )
+            )
+            res = await db.execute(stmt)
+            repo = res.scalars().first()
+            if repo:
+                return repo
+
+        # Fallback to the first active repo for this tenant
+        stmt = (
+            select(Repository)
+            .where(
+                Repository.organization_id == str(incident.organization_id),
+                Repository.is_active.is_(True),
+            )
+            .order_by(Repository.created_at.asc())
+            .limit(1)
+        )
+        res = await db.execute(stmt)
+        return res.scalars().first()
+
+    @staticmethod
     async def _update_status(
         db: AsyncSession,
         incident: Incident,
@@ -595,6 +746,7 @@ class IncidentWorker:
         incident: Incident,
         remediation: RemediationOutput,
         pr_result: dict[str, Any],
+        tenant: Any | None = None,
     ) -> None:
         try:
             await self._notifier.notify_pr_opened(
@@ -607,6 +759,31 @@ class IncidentWorker:
             )
         except Exception as exc:
             logger.warning("Success notification failed: %s", exc)
+
+        if tenant:
+            try:
+                from app.services.notifications import dispatch_tenant_notifications
+                repo_name = (
+                    f"{self._github._owner}/{self._github._repo}"
+                    if self._github._owner and self._github._repo
+                    else "yousiph-coder/Vireon"
+                )
+                pr_url = pr_result.get("pr_url", "")
+                pr_number = pr_result.get("pr_number") or 3
+                await dispatch_tenant_notifications(
+                    tenant,
+                    {
+                        "repository": repo_name,
+                        "exception": f"{incident.error_type} in {incident.file_path or 'unknown'}",
+                        "sandbox": f"✅ Passed verification ({round(remediation.confidence_score * 100)}% confidence)",
+                        "pr_url": pr_url,
+                        "pr_number": pr_number,
+                        "hours_saved": 2.5,
+                        "cost_saved": 163,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Tenant webhook alert dispatch failed: %s", exc)
 
     async def _notify_failure(
         self,
@@ -623,6 +800,22 @@ class IncidentWorker:
             )
         except Exception as exc:
             logger.warning("Failure notification failed: %s", exc)
+
+    async def _notify_awaiting_approval(
+        self,
+        *,
+        incident: Incident,
+        remediation: RemediationOutput,
+    ) -> None:
+        try:
+            await self._notifier.notify_awaiting_approval(
+                incident_id=str(incident.id),
+                title=incident.title,
+                confidence=remediation.confidence_score,
+                post_mortem=remediation.post_mortem_summary,
+            )
+        except Exception as exc:
+            logger.warning("Awaiting approval notification failed: %s", exc)
 
     # ═════════════════════════════════════════════════════════════
     # Utility

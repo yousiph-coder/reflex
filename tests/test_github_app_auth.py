@@ -77,6 +77,17 @@ class TestGitHubAppAuth(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             svc._generate_app_jwt()
 
+    def test_configured_app_jwt_generation(self):
+        """Test generating JWT using the configured GitHub App ID 5193276 and PEM file."""
+        svc = GitHubService()
+        token = svc.generate_jwt()
+        self.assertIsInstance(token, str)
+        claims = jwt.decode(token, options={"verify_signature": False})
+        self.assertEqual(claims["iss"], "5193276")
+        self.assertIn("iat", claims)
+        self.assertIn("exp", claims)
+        self.assertEqual(claims["exp"] - claims["iat"], 600)
+
     def test_verify_webhook_signature(self):
         secret = "super-secret-webhook-key-123"
         payload = b'{"action":"created","installation":{"id":12345}}'
@@ -235,6 +246,105 @@ class TestGitHubWebhookEndpoint(unittest.TestCase):
         self.assertEqual(data["installation_id"], 88123)
         self.assertEqual(data["account"], "acme-corp")
 
+    @patch("app.api.v1.webhooks.get_settings")
+    def test_github_webhook_installation_with_repositories(self, mock_settings):
+        settings = MagicMock()
+        settings.github_webhook_secret.get_secret_value.return_value = self.secret
+        mock_settings.return_value = settings
+
+        body = json.dumps({
+            "action": "added",
+            "installation": {"id": 5193276, "account": {"login": "yousiph-coder"}},
+            "repositories_added": [
+                {"name": "autoheal-target-demo", "full_name": "yousiph-coder/autoheal-target-demo", "private": False}
+            ],
+        }).encode()
+        sig = self._sign_payload(body)
+
+        response = self.client.post(
+            "/api/v1/webhooks/github",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-hub-signature-256": sig,
+                "x-github-event": "installation_repositories",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "processed")
+        self.assertEqual(data["action"], "added")
+        self.assertEqual(data["installation_id"], 5193276)
+
+
+class TestGitHubAppModule(unittest.TestCase):
+    """Test functions in app.services.github_app."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rsa_pem = _generate_test_rsa_pem()
+
+    def test_generate_app_jwt_custom_creds(self):
+        from app.services.github_app import generate_app_jwt
+        token = generate_app_jwt(app_id="112233", private_key=self.rsa_pem)
+        claims = jwt.decode(token, options={"verify_signature": False})
+        self.assertEqual(claims["iss"], "112233")
+        self.assertIn("exp", claims)
+        self.assertIn("iat", claims)
+        self.assertEqual(claims["exp"] - claims["iat"], 600)
+
+    def test_generate_app_jwt_configured_defaults(self):
+        from app.services.github_app import generate_app_jwt
+        token = generate_app_jwt()
+        claims = jwt.decode(token, options={"verify_signature": False})
+        self.assertEqual(claims["iss"], "5193276")
+
+    def test_get_installation_access_token(self):
+        import asyncio
+        import httpx
+        from app.services.github_app import get_installation_access_token
+
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"token": "ghs_test_token_12345", "expires_at": "2026-10-05T12:00:00Z"}
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.post.return_value = mock_resp
+
+        token = asyncio.run(get_installation_access_token(12345, client=mock_client))
+        self.assertEqual(token, "ghs_test_token_12345")
+        mock_client.post.assert_called_once()
+        args, kwargs = mock_client.post.call_args
+        self.assertIn("/app/installations/12345/access_tokens", args[0])
+        self.assertIn("Authorization", kwargs["headers"])
+        self.assertTrue(kwargs["headers"]["Authorization"].startswith("Bearer "))
+
+    def test_get_installation_repositories(self):
+        import asyncio
+        import httpx
+        from app.services.github_app import get_installation_repositories
+
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "total_count": 1,
+            "repositories": [{"id": 42, "name": "my-repo", "full_name": "owner/my-repo"}],
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_resp
+
+        with patch("app.services.github_app.get_installation_access_token", return_value="ghs_mock_tok"):
+            repos = asyncio.run(get_installation_repositories(999, client=mock_client))
+            self.assertEqual(len(repos), 1)
+            self.assertEqual(repos[0]["name"], "my-repo")
+            args, kwargs = mock_client.get.call_args
+            self.assertIn("/installation/repositories", args[0])
+            self.assertEqual(kwargs["headers"]["Authorization"], "Bearer ghs_mock_tok")
+
 
 if __name__ == "__main__":
     unittest.main()
+

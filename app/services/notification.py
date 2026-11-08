@@ -29,6 +29,7 @@ class NotificationType(str, Enum):
     INCIDENT_CREATED = "incident_created"
     PR_OPENED = "pr_opened"
     REMEDIATION_FAILED = "remediation_failed"
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 # ── Colour palette ──────────────────────────────────────────────
@@ -36,12 +37,14 @@ _COLORS = {
     NotificationType.INCIDENT_CREATED: {"slack": "#E74C3C", "discord": 0xE74C3C},
     NotificationType.PR_OPENED: {"slack": "#2ECC71", "discord": 0x2ECC71},
     NotificationType.REMEDIATION_FAILED: {"slack": "#F39C12", "discord": 0xF39C12},
+    NotificationType.AWAITING_APPROVAL: {"slack": "#3498DB", "discord": 0x3498DB},
 }
 
 _EMOJIS = {
     NotificationType.INCIDENT_CREATED: "🚨",
     NotificationType.PR_OPENED: "✅",
     NotificationType.REMEDIATION_FAILED: "⚠️",
+    NotificationType.AWAITING_APPROVAL: "⏳",
 }
 
 
@@ -168,6 +171,31 @@ class NotificationDispatcher:
                 f"Auto-Heal AI was unable to produce a passing fix "
                 f"after {attempts} attempt(s). Manual intervention required."
             ),
+            fields=fields,
+        )
+
+    async def notify_awaiting_approval(
+        self,
+        *,
+        incident_id: str,
+        title: str,
+        confidence: float = 0.0,
+        post_mortem: str = "",
+    ) -> None:
+        """Send a notification when remediation is awaiting human approval."""
+        fields = {
+            "Incident ID": f"`{incident_id}`",
+            "Confidence": f"{confidence:.0%}",
+        }
+        description = "Remediation ready for review: Awaiting Approval."
+        if post_mortem:
+            summary = post_mortem[:500] + ("…" if len(post_mortem) > 500 else "")
+            description += f"\n\n**Summary:** {summary}"
+
+        await self._dispatch(
+            notification_type=NotificationType.AWAITING_APPROVAL,
+            title="Remediation ready for review: Awaiting Approval",
+            description=description,
             fields=fields,
         )
 

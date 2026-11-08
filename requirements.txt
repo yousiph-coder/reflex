@@ -35,3 +35,10 @@ gunicorn==23.0.0
 
 # Logging / observability
 python-json-logger==3.2.1
+
+# Supabase Auth & Client
+supabase>=2.31.0
+
+# Stripe Payments & Billing
+stripe>=16.0.0
+

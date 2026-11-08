@@ -1,36 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Light Mode Tokens: Clean White & Slate/Zinc Accents */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 98%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
     --primary: 160 84% 39%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
     --ring: 160 84% 39%;
     --radius: 0.75rem;
+
+    /* Glass Tokens for Light Mode */
+    --glass-bg: rgba(255, 255, 255, 0.82);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  }
+
+  .dark {
+    /* Dark Mode (Default): OLED Pure Black */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 153 84% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3.7% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 12%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 12%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 153 84% 45%;
+
+    /* Glass Tokens for OLED Dark Mode */
+    --glass-bg: rgba(255, 255, 255, 0.03);
+    --glass-border: rgba(255, 255, 255, 0.10);
+    --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
   }
 }
 
 body {
-  background-color: #09090b;
+  font-family: var(--font-sans);
+  background-color: #000000;
   color: #f4f4f5;
   font-feature-settings: "rlig" 1, "calt" 1;
+  letter-spacing: -0.011em;
+}
+
+html.light body {
+  background-color: #ffffff;
+  color: #09090b;
+}
+
+/* Typography Helpers */
+.font-mono,
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+/* Apple Liquid Glass Surface System */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+html.light .liquid-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+.liquid-glass-elevated {
+  background: rgba(10, 10, 12, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.09), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+}
+
+html.light .liquid-glass-elevated {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 1), 0 20px 40px -10px rgba(0, 0, 0, 0.08);
+}
+
+/* Luminous Glow Utilities (OLED Dark Mode) */
+.glow-emerald {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+}
+
+.glow-emerald-lg {
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.50);
+}
+
+.glow-amber {
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.35);
+}
+
+.glow-crimson {
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.35);
+}
+
+/* Zero blurry neon drop-shadows in Light Mode */
+html.light .glow-emerald,
+html.light .glow-emerald-lg,
+html.light .glow-amber,
+html.light .glow-crimson,
+html.light .shadow-glow-emerald,
+html.light .shadow-glow-emerald-lg,
+html.light .shadow-glow-amber,
+html.light .shadow-glow-crimson {
+  box-shadow: none !important;
 }
 
 /* Custom sleek scrollbar */
@@ -39,25 +156,37 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 9999px;
 }
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: rgba(255, 255, 255, 0.3);
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
-/* Landing page ambient grid and glow */
+/* Ambient Subtle Grid */
 .bg-grid-pattern {
   background-size: 40px 40px;
   background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
                     linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
 }
 
+html.light .bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+}
+
 .text-gradient-emerald {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #06b6d4 100%);
+  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #05df72 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -67,4 +196,32 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+/* تنعيم الخطوط ومنع التشويش */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
+/* إصلاح التباين تلقائياً في الوضع النهاري (Light Mode) */
+html.light .text-white:not(button):not(a.bg-emerald-500):not(.bg-emerald-500 *):not(.bg-black *):not(.bg-zinc-900 *),
+html:not(.dark) .text-white:not(button):not(a.bg-emerald-500):not(.bg-emerald-500 *):not(.bg-black *):not(.bg-zinc-900 *),
+html.light .text-zinc-100,
+html.light .text-slate-100 {
+  color: #09090b !important; /* أسود حاد للأرقام والعناوين */
+}
+
+/* توضيح النصوص الفرعية والرمادية في الوضع النهاري */
+html.light .text-zinc-400,
+html.light .text-zinc-500,
+html.light .text-slate-400 {
+  color: #52525b !important;
+}
+
+/* تحويل الأخضر النيون الباهت في الوضع النهاري إلى أخضر زمردي داكن وحاد بدون ضبابية */
+html.light .text-emerald-400,
+html.light .text-emerald-300 {
+  color: #047857 !important;
+  filter: none !important;
+  text-shadow: none !important;
+}

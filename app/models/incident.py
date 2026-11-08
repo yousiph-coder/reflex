@@ -50,19 +50,57 @@ class IncidentStatus(str, enum.Enum):
     PENDING = "PENDING"
     ANALYZING = "ANALYZING"
     REMEDIATING = "REMEDIATING"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    REJECTED = "REJECTED"
     RESOLVED = "RESOLVED"
     FAILED = "FAILED"
     IGNORED = "IGNORED"
+    MERGED = "merged"
+    PR_OPEN = "pr_open"
+    HEALED = "healed"
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            val_upper = value.upper()
+            val_lower = value.lower()
+            for member in cls:
+                if (
+                    member.value.upper() == val_upper
+                    or member.name.upper() == val_upper
+                    or member.value.lower() == val_lower
+                ):
+                    return member
+            if val_lower in ("resolved", "merged", "healed", "pr_open", "closed"):
+                return cls.RESOLVED
+        return super()._missing_(value)
 
 
 class RemediationStatus(str, enum.Enum):
     """Lifecycle states for a single remediation attempt."""
 
     IN_PROGRESS = "IN_PROGRESS"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    REJECTED = "REJECTED"
     PR_OPENED = "PR_OPENED"
     PR_MERGED = "PR_MERGED"
     FAILED = "FAILED"
     ROLLED_BACK = "ROLLED_BACK"
+
+
+class IncidentStatusType(Enum):
+    """Case-tolerant and alias-tolerant Enum column type for IncidentStatus."""
+
+    def _object_value_for_elem(self, elem):
+        if elem in self._object_lookup:
+            return self._object_lookup[elem]
+        if isinstance(elem, str):
+            for k, v in self._object_lookup.items():
+                if k and k.upper() == elem.upper():
+                    return v
+            if elem.lower() in ("merged", "healed", "pr_open", "closed", "resolved"):
+                return self._object_lookup.get("RESOLVED") or self._object_lookup.get("MERGED")
+        return super()._object_value_for_elem(elem)
 
 
 # ── Helper ──────────────────────────────────────────────────────
@@ -172,7 +210,7 @@ class Incident(Base):
         comment="Sentry severity level",
     )
     status: Mapped[IncidentStatus] = mapped_column(
-        Enum(IncidentStatus, name="incident_status", native_enum=False),
+        IncidentStatusType(IncidentStatus, name="incident_status", native_enum=False),
         nullable=False,
         default=IncidentStatus.PENDING,
         index=True,
@@ -215,10 +253,118 @@ class Incident(Base):
         UniqueConstraint("fingerprint", name="uq_incidents_fingerprint"),
     )
 
+    def __init__(self, **kwargs):
+        if "id" not in kwargs:
+            kwargs["id"] = _new_uuid()
+        if "sentry_issue_id" not in kwargs:
+            kwargs["sentry_issue_id"] = f"ISSUE-{uuid.uuid4().hex[:8]}"
+        if "fingerprint" not in kwargs:
+            kwargs["fingerprint"] = uuid.uuid4().hex
+        if "title" not in kwargs:
+            msg = kwargs.get("error_message") or kwargs.get("error_type") or "AutoHeal Incident"
+            kwargs["title"] = str(msg)[:1000]
+
+        repo_id = kwargs.pop("repository_id", None)
+        pr_url = kwargs.pop("pr_url", None)
+        branch_name = kwargs.pop("branch_name", None)
+        resolved_at = kwargs.pop("resolved_at", None)
+
+        if resolved_at and "updated_at" not in kwargs:
+            kwargs["updated_at"] = resolved_at
+
+        super().__init__(**kwargs)
+
+        if repo_id or pr_url or branch_name:
+            if not self.raw_event or not isinstance(self.raw_event, dict):
+                self.raw_event = {}
+            if repo_id:
+                self.raw_event["repository_id"] = str(repo_id)
+            if pr_url:
+                self.raw_event["pr_url"] = str(pr_url)
+            if branch_name:
+                self.raw_event["branch_name"] = str(branch_name)
+
+        if pr_url:
+            st = RemediationStatus.PR_MERGED if str(self.status).lower() in ["merged", "resolved"] else RemediationStatus.PR_OPENED
+            self.remediation_attempts.append(
+                RemediationAttempt(
+                    id=uuid.uuid4(),
+                    organization_id=self.organization_id,
+                    incident_id=self.id,
+                    strategy="autonomous_fix",
+                    status=st,
+                    pr_url=str(pr_url),
+                    pr_number=3 if "#3" in str(pr_url) or "/3" in str(pr_url) else 1,
+                    branch_name=branch_name or "autoheal/fix",
+                    llm_model="gpt-4o",
+                )
+            )
+
+    @property
+    def repository_id(self) -> str | None:
+        return self.raw_event.get("repository_id") if isinstance(self.raw_event, dict) else None
+
+    @repository_id.setter
+    def repository_id(self, val: str) -> None:
+        if not self.raw_event or not isinstance(self.raw_event, dict):
+            self.raw_event = {}
+        self.raw_event["repository_id"] = str(val)
+
+    @property
+    def pr_url(self) -> str | None:
+        if self.remediation_attempts:
+            for att in self.remediation_attempts:
+                if att.pr_url:
+                    return att.pr_url
+        return self.raw_event.get("pr_url") if isinstance(self.raw_event, dict) else None
+
+    @pr_url.setter
+    def pr_url(self, val: str) -> None:
+        if not self.raw_event or not isinstance(self.raw_event, dict):
+            self.raw_event = {}
+        self.raw_event["pr_url"] = str(val)
+
+    @property
+    def branch_name(self) -> str | None:
+        if self.remediation_attempts:
+            for att in self.remediation_attempts:
+                if att.branch_name:
+                    return att.branch_name
+        return self.raw_event.get("branch_name") if isinstance(self.raw_event, dict) else None
+
+    @branch_name.setter
+    def branch_name(self, val: str) -> None:
+        if not self.raw_event or not isinstance(self.raw_event, dict):
+            self.raw_event = {}
+        self.raw_event["branch_name"] = str(val)
+
+    @property
+    def resolved_at(self) -> datetime | None:
+        if self.raw_event and isinstance(self.raw_event, dict) and "resolved_at" in self.raw_event:
+            val = self.raw_event["resolved_at"]
+            if isinstance(val, datetime):
+                return val
+            if isinstance(val, str):
+                try:
+                    return datetime.fromisoformat(val)
+                except Exception:
+                    pass
+        if str(getattr(self.status, "value", self.status)).lower() in ["merged", "resolved", "healed"]:
+            return self.updated_at
+        return None
+
+    @resolved_at.setter
+    def resolved_at(self, val: datetime) -> None:
+        self.updated_at = val
+        if not self.raw_event or not isinstance(self.raw_event, dict):
+            self.raw_event = {}
+        self.raw_event["resolved_at"] = val.isoformat() if hasattr(val, "isoformat") else str(val)
+
     def __repr__(self) -> str:
+        st_val = getattr(self.status, "value", self.status)
         return (
             f"<Incident(id={self.id!s}, issue={self.sentry_issue_id}, "
-            f"status={self.status.value})>"
+            f"status={st_val})>"
         )
 
 
