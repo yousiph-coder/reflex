@@ -1,132 +1,171 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  CreditCard,
-  KeyRound,
+  ChevronRight,
+  HelpCircle,
   LogOut,
   Settings,
-  Shield,
+  User,
+  Zap,
 } from "lucide-react";
 import { useTenant } from "@/context/TenantContext";
 
-export function UserNavMenu() {
-  const { user, logout, isAuthenticated } = useTenant();
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+interface UserNavMenuProps {
+  isCollapsed?: boolean;
+}
+
+export function UserNavMenu({ isCollapsed = false }: UserNavMenuProps) {
+  const { user, currentOrg, billingUsage, logout, openUpgradeModal } = useTenant();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
       }
     }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    }
-    if (isOpen) {
+    if (menuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
-      document.addEventListener("keydown", handleKeyDown);
     }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen]);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
 
-  if (!isAuthenticated && !user) {
-    return (
-      <Link
-        href="/login"
-        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs glow-emerald transition-colors font-mono"
-      >
-        Sign In
-      </Link>
-    );
-  }
-
-  const initials = user?.name
-    ? user.name
-        .split(" ")
-        .map((n) => n[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase()
-    : "SRE";
+  const displayName = user?.name || "Yousef";
+  const activePlan = (billingUsage?.plan || currentOrg?.plan || "free").toUpperCase();
+  const initials = displayName.slice(0, 2).toUpperCase();
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative" ref={menuRef}>
+      {/* Trigger Button — Only Avatar Circle when Sidebar is Collapsed! */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 p-0.5 rounded-full hover:ring-2 hover:ring-emerald-500/50 transition-all focus:outline-none"
-        aria-label="User account menu"
+        onClick={() => setMenuOpen((prev) => !prev)}
+        className={`flex items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all text-left group ${
+          isCollapsed ? "justify-center w-10 h-10 p-0" : "gap-2.5 p-1.5 pr-2.5 max-w-[175px]"
+        }`}
+        title={displayName}
       >
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 p-[1.5px] glow-emerald">
-          <div className="w-full h-full rounded-full bg-black dark:bg-black light:bg-zinc-900 flex items-center justify-center text-xs font-bold text-white uppercase font-mono">
+        {user?.avatarUrl ? (
+          <img
+            src={user.avatarUrl}
+            alt={displayName}
+            className="w-8 h-8 rounded-full object-cover border border-indigo-500/40 shrink-0"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
             {initials}
           </div>
-        </div>
+        )}
+
+        {!isCollapsed && (
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+              {displayName}
+            </div>
+            <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+              {activePlan} Plan
+            </div>
+          </div>
+        )}
       </button>
 
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 rounded-xl liquid-glass-elevated z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-          <div className="p-3.5 border-b border-white/10 dark:border-white/10 light:border-zinc-200">
-            <div className="font-semibold text-xs text-white dark:text-white light:text-zinc-900 truncate font-sans">
-              {user?.name || "AutoHeal Engineer"}
+      {/* Clean ChatGPT-Style Upward Popup Menu */}
+      {menuOpen && (
+        <div
+          className={`absolute bottom-full mb-3 w-64 rounded-2xl border border-slate-200 dark:border-white/15 bg-white/95 dark:bg-[#0d101b]/95 backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+            isCollapsed ? "left-1" : "left-0"
+          }`}
+        >
+          {/* User Header (Clickable to Profile) */}
+          <Link
+            href="/dashboard/profile"
+            onClick={() => setMenuOpen(false)}
+            className="p-3.5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-2.5 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={displayName}
+                  className="w-9 h-9 rounded-full object-cover border border-indigo-500/40 shrink-0"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                  {initials}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-950 dark:text-white truncate">
+                  {displayName}
+                </div>
+                <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                  {activePlan === "FREE" ? "Free" : activePlan}
+                </div>
+              </div>
             </div>
-            <div className="text-[11px] text-zinc-400 dark:text-zinc-400 light:text-zinc-500 truncate mt-0.5 font-mono">
-              {user?.email || "engineer@autoheal.dev"}
-            </div>
-            <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono glow-emerald">
-              <Shield className="w-3 h-3" />
-              {user?.role || "Site Reliability Engineer"}
-            </div>
-          </div>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          </Link>
 
+          {/* Menu Links to the 3 Dedicated Pages */}
           <div className="p-1.5 space-y-0.5 text-xs">
-            <Link
-              href="/dashboard/settings/billing"
-              onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-300 dark:text-zinc-300 light:text-zinc-700 hover:text-white dark:hover:text-white light:hover:text-zinc-950 hover:bg-white/[0.06] dark:hover:bg-white/[0.06] light:hover:bg-zinc-100 transition-colors font-sans"
-            >
-              <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Subscription & Billing</span>
-            </Link>
-
-            <Link
-              href="/dashboard/settings"
-              onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-300 dark:text-zinc-300 light:text-zinc-700 hover:text-white dark:hover:text-white light:hover:text-zinc-950 hover:bg-white/[0.06] dark:hover:bg-white/[0.06] light:hover:bg-zinc-100 transition-colors font-sans"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-zinc-400" />
-              <span>API Keys & Permissions</span>
-            </Link>
-
-            <Link
-              href="/dashboard/settings"
-              onClick={() => setIsOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-zinc-300 dark:text-zinc-300 light:text-zinc-700 hover:text-white dark:hover:text-white light:hover:text-zinc-950 hover:bg-white/[0.06] dark:hover:bg-white/[0.06] light:hover:bg-zinc-100 transition-colors font-sans"
-            >
-              <Settings className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Settings</span>
-            </Link>
-          </div>
-
-          <div className="p-1.5 border-t border-white/10 dark:border-white/10 light:border-zinc-200 bg-black/20 dark:bg-black/40 light:bg-zinc-50">
             <button
               type="button"
               onClick={() => {
-                setIsOpen(false);
+                setMenuOpen(false);
+                openUpgradeModal();
+              }}
+              className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 font-semibold transition-colors"
+            >
+              <Zap className="w-4 h-4" />
+              <span>Upgrade to Pro ($29/mo)</span>
+            </button>
+
+            <Link
+              href="/dashboard/profile"
+              onClick={() => setMenuOpen(false)}
+              className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <span className="font-medium">Profile & Activity</span>
+            </Link>
+
+            <Link
+              href="/dashboard/account"
+              onClick={() => setMenuOpen(false)}
+              className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <span className="font-medium">Settings</span>
+            </Link>
+
+            <Link
+              href="/dashboard/help"
+              onClick={() => setMenuOpen(false)}
+              className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-colors"
+            >
+              <span className="flex items-center gap-2.5">
+                <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <span className="font-medium">Help & Shortcuts</span>
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            </Link>
+          </div>
+
+          {/* Log Out */}
+          <div className="p-1.5 border-t border-slate-200 dark:border-white/10">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
                 logout();
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left font-sans"
+              className="w-full px-3 py-2.5 rounded-xl flex items-center gap-2.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
+              <LogOut className="w-4 h-4" />
+              <span>Log out</span>
             </button>
           </div>
         </div>

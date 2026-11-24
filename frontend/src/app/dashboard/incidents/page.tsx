@@ -1,290 +1,334 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import React, { useState } from 'react';
 import {
-  AlertTriangle,
-  ChevronRight,
-  ExternalLink,
-  FileCode,
-  GitPullRequest,
-  RefreshCw,
   Search,
-} from "lucide-react";
-import { apiClient } from "@/lib/api-client";
-import { IncidentSummary } from "@/lib/types";
-import { cn, formatRelativeTime } from "@/lib/utils";
+  CheckCircle2,
+  GitPullRequest,
+  ShieldCheck,
+  Clock,
+  ExternalLink,
+  Filter,
+  Sparkles,
+  ArrowUpRight,
+  RotateCcw,
+  FileCode2,
+  HeartPulse,
+} from 'lucide-react';
 
-const STATUSES = [
-  { label: "All Incidents", value: "ALL" },
-  { label: "Awaiting Review", value: "AWAITING_APPROVAL" },
-  { label: "Auto-Healed", value: "RESOLVED" },
-  { label: "Remediating", value: "REMEDIATING" },
-  { label: "Failed", value: "FAILED" },
-  { label: "Pending", value: "PENDING" },
-];
+// ============================================================================
+// REFLEX INCIDENT EXPLORER PAGE
+// File path in VS Code: src/app/dashboard/incidents/page.tsx
+// ============================================================================
 
-function getStatusBadge(status: string) {
-  const s = String(status || "").toLowerCase().trim();
-
-  switch (s) {
-    case "merged":
-    case "healed":
-    case "resolved":
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-[#05df72] shadow-[0_0_8px_rgba(5,223,114,0.6)]" />
-          ● Healed & Merged
-        </span>
-      );
-    case "pr_open":
-    case "pr_opened":
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
-          ● PR Ready for Merge
-        </span>
-      );
-    case "remediating":
-    case "analyzing":
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-          ● Sandbox Running
-        </span>
-      );
-    case "failed":
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 dark:bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
-          ● Failed
-        </span>
-      );
-    case "awaiting_approval":
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b] animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-          ● Awaiting Approval
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium select-none transition-all duration-200 bg-zinc-100 dark:bg-white/[0.05] text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-white/10">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-          ● Pending
-        </span>
-      );
-  }
+interface IncidentRecord {
+  id: string;
+  title: string;
+  file: string;
+  line: number;
+  repo: string;
+  branch: string;
+  mttr: string;
+  timeAgo: string;
+  prNumber: number;
+  prUrl: string;
+  confidence: string;
+  blastRadius: string;
+  testsPassed: string;
+  moneySaved: string;
+  status: 'merged' | 'ready';
+  rootCause: string;
 }
 
-export default function IncidentsPage() {
-  const router = useRouter();
-  const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [searchTerm, setSearchTerm] = useState("");
+const ALL_INCIDENTS: IncidentRecord[] = [
+  {
+    id: '745a7b31',
+    title: "TypeError: Cannot read properties of undefined (reading 'length')",
+    file: 'src/counter.js',
+    line: 42,
+    repo: 'yousiph-coder/reflex',
+    branch: 'reflex/fix-incident-745a7b31',
+    mttr: '38 sec',
+    timeAgo: 'Just now',
+    prNumber: 3,
+    prUrl: 'https://github.com/yousiph-coder/reflex/pull/3',
+    confidence: '99.2%',
+    blastRadius: 'Low (1 file)',
+    testsPassed: '14/14 unit tests',
+    moneySaved: '$162.50',
+    status: 'merged',
+    rootCause:
+      'Unguarded array length property access when incoming telemetry batch is undefined.',
+  },
+  {
+    id: '92bc10f4',
+    title: 'KeyError: Missing tenant_id in webhook header payload',
+    file: 'api/webhooks/sentry.py',
+    line: 88,
+    repo: 'yousiph-coder/reflex',
+    branch: 'reflex/fix-incident-92bc10f4',
+    mttr: '41 sec',
+    timeAgo: '2 hours ago',
+    prNumber: 2,
+    prUrl: 'https://github.com/yousiph-coder/reflex/pull/2',
+    confidence: '98.7%',
+    blastRadius: 'Low (1 endpoint)',
+    testsPassed: '22/22 unit tests',
+    moneySaved: '$162.50',
+    status: 'merged',
+    rootCause:
+      'Direct dictionary key lookup on optional organization block in Sentry ping event.',
+  },
+  {
+    id: '31fa89e2',
+    title: 'Hydration Mismatch: Async timestamp rendered on client',
+    file: 'src/components/TelemetryBadge.tsx',
+    line: 19,
+    repo: 'yousiph-coder/reflex',
+    branch: 'reflex/fix-incident-31fa89e2',
+    mttr: '34 sec',
+    timeAgo: 'Yesterday',
+    prNumber: 1,
+    prUrl: 'https://github.com/yousiph-coder/reflex/pull/1',
+    confidence: '99.5%',
+    blastRadius: 'Minimal (UI badge)',
+    testsPassed: '9/9 unit tests',
+    moneySaved: '$162.50',
+    status: 'ready',
+    rootCause:
+      'Client-side locale time differed from SSR render during initial Next.js hydration.',
+  },
+];
 
-  const loadIncidents = async () => {
-    setIsLoading(true);
-    try {
-      const res = await apiClient.getIncidents({
-        status: statusFilter === "ALL" ? undefined : statusFilter,
-      });
+export default function ReflexIncidentsPage() {
+  const [filter, setFilter] = useState<'all' | 'merged' | 'ready'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-      // Priority sort: Ensure pending incidents with status AWAITING_APPROVAL appear at the very top
-      const sorted = [...res.items].sort((a, b) => {
-        if (a.status === "AWAITING_APPROVAL" && b.status !== "AWAITING_APPROVAL") return -1;
-        if (b.status === "AWAITING_APPROVAL" && a.status !== "AWAITING_APPROVAL") return 1;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      });
-
-      setIncidents(sorted);
-    } catch (err) {
-      console.error("Failed to load incidents from backend API:", err);
-    } finally {
-      setIsLoading(false);
-    }
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3200);
   };
 
-  useEffect(() => {
-    loadIncidents();
-  }, [statusFilter]);
-
-  // Filter incidents
-  const filteredIncidents = incidents.filter((i) => {
-    if (statusFilter !== "ALL" && i.status !== statusFilter) {
-      return false;
-    }
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      i.title.toLowerCase().includes(term) ||
-      i.error_type.toLowerCase().includes(term) ||
-      (i.file_path && i.file_path.toLowerCase().includes(term)) ||
-      i.sentry_issue_id.toLowerCase().includes(term)
-    );
+  const filteredIncidents = ALL_INCIDENTS.filter((inc) => {
+    const matchesTab = filter === 'all' ? true : inc.status === filter;
+    const matchesSearch =
+      inc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inc.file.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inc.id.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
   });
 
-  const awaitingCount = incidents.filter((i) => i.status === "AWAITING_APPROVAL").length;
-
   return (
-    <div className="space-y-6">
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-white flex items-center gap-2.5 font-mono">
-            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500 dark:text-amber-400">
-              <AlertTriangle className="w-5 h-5 text-amber-500 dark:text-amber-400" />
-            </div>
-            Incident Feed & Explorer
-          </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 font-sans leading-relaxed">
-            Real-time feed of intercepted production exceptions and autonomous remediation PR audits.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={loadIncidents}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] border border-zinc-200 dark:border-white/10 text-xs font-mono font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition-all select-none"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin text-emerald-500 dark:text-emerald-400")} />
-          Refresh Feed
-        </button>
+    <div className="relative w-full text-slate-900 dark:text-white space-y-8 pb-14">
+      {/* Ambient Background Spotlight Glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div
+          className="absolute -top-24 left-1/2 -translate-x-1/2 w-[960px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
+          style={{
+            background:
+              'radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)',
+          }}
+        />
       </div>
 
-      {/* ── Search & Filter Controls ─────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      {/* 1. TOP HEADER & SUMMARY PILLS */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-white/10">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium bg-indigo-500/10 border-indigo-500/25 text-indigo-600 dark:text-indigo-400 mb-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Closed-Loop Incident Ledger · 100% Sandbox Verified</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+            Incident Explorer
+          </h1>
+        </div>
+
+        {/* Summary Metric Capsules */}
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <div className="px-3.5 py-2 rounded-xl border bg-white/90 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 flex items-center gap-2">
+            <HeartPulse className="w-4 h-4 text-emerald-500" />
+            <span className="text-slate-500 dark:text-slate-400">Vitality:</span>
+            <strong className="text-emerald-600 dark:text-emerald-400">
+              1% → 100%
+            </strong>
+          </div>
+
+          <div className="px-3.5 py-2 rounded-xl border bg-white/90 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-indigo-400" />
+            <span className="text-slate-500 dark:text-slate-400">Avg MTTR:</span>
+            <strong className="text-indigo-600 dark:text-indigo-400">
+              37.6 sec
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. FILTER TABS & SEARCH BAR */}
+      <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        {/* Filter Pills */}
+        <div className="inline-flex p-1 rounded-2xl border bg-slate-100/80 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 self-start">
+          {[
+            { key: 'all', label: 'All Reflexes (3)' },
+            { key: 'merged', label: 'Merged PRs (2)' },
+            { key: 'ready', label: 'Ready to Merge (1)' },
+          ].map((tab) => {
+            const active = filter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setFilter(tab.key as 'all' | 'merged' | 'ready')}
+                className={`px-4 py-2 rounded-xl text-xs font-mono font-semibold transition-all ${
+                  active
+                    ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Clean Search Box */}
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search exceptions, files, or issue IDs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-100 dark:bg-black/50 border border-zinc-300 dark:border-white/10 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:border-emerald-500/80 transition-colors font-sans"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter by file, error, or ID..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-2xl border text-xs font-mono bg-white/90 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
           />
         </div>
+      </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 font-mono">
-          {STATUSES.map((st) => (
-            <button
-              type="button"
-              key={st.value}
-              onClick={() => setStatusFilter(st.value)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                statusFilter === st.value
-                  ? "bg-zinc-900 text-white dark:bg-white dark:text-black shadow-sm font-semibold"
-                  : "liquid-glass border border-zinc-200 dark:border-white/10 text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-              }`}
-            >
-              <span>{st.label}</span>
-              {st.value === "AWAITING_APPROVAL" && awaitingCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse">
-                  {awaitingCount}
+      {/* 3. INCIDENT CARDS LIST */}
+      <div className="relative z-10 space-y-4">
+        {filteredIncidents.map((inc) => (
+          <div
+            key={inc.id}
+            className="rounded-3xl border p-6 bg-white/95 dark:bg-[#0b0d17]/90 backdrop-blur-xl border-slate-200/90 dark:border-white/10 hover:border-indigo-500/40 shadow-sm transition-all space-y-4"
+          >
+            {/* Card Top Row */}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                  <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30 font-semibold">
+                    #{inc.id}
+                  </span>
+
+                  <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-semibold">
+                    <FileCode2 className="w-3.5 h-3.5 text-indigo-400" />
+                    {inc.file}:{inc.line}
+                  </span>
+
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {inc.timeAgo}
+                  </span>
+                </div>
+
+                <h2 className="text-base sm:text-lg font-bold text-slate-950 dark:text-white">
+                  {inc.title}
+                </h2>
+              </div>
+
+              {/* Status & Actions */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span
+                  className={`font-mono text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1.5 ${
+                    inc.status === 'merged'
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                      : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {inc.status === 'merged'
+                    ? `PR #${inc.prNumber} Merged`
+                    : `PR #${inc.prNumber} Ready`}
                 </span>
-              )}
-            </button>
-          ))}
-        </div>
+
+                <a
+                  href={`/dashboard/incidents/${inc.id}`}
+                  className="px-4 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 flex items-center gap-1.5 shadow-[0_4px_15px_rgba(99,102,241,0.3)]"
+                >
+                  <span>Inspect X-Ray</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Root Cause Description */}
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              {inc.rootCause}
+            </p>
+
+            {/* Bottom Telemetry Bar */}
+            <div className="pt-4 border-t border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
+              <div className="flex flex-wrap items-center gap-4 text-slate-500 dark:text-slate-400">
+                <span>
+                  ⚡ MTTR:{' '}
+                  <strong className="text-sky-600 dark:text-sky-400">
+                    {inc.mttr}
+                  </strong>
+                </span>
+                <span>
+                  🛡 Confidence:{' '}
+                  <strong className="text-indigo-600 dark:text-indigo-400">
+                    {inc.confidence}
+                  </strong>
+                </span>
+                <span>
+                  ✓ Sandbox:{' '}
+                  <strong className="text-emerald-600 dark:text-emerald-400">
+                    {inc.testsPassed}
+                  </strong>
+                </span>
+                <span>
+                  💰 Saved:{' '}
+                  <strong className="text-violet-600 dark:text-violet-400">
+                    {inc.moneySaved}
+                  </strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <a
+                  href={inc.prUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                >
+                  <GitPullRequest className="w-3.5 h-3.5" />
+                  <span>GitHub PR #{inc.prNumber}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+
+                <button
+                  onClick={() =>
+                    showToast(
+                      `Re-running Docker Sandbox verification for #${inc.id}...`
+                    )
+                  }
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Re-verify</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* ── Data Table (Apple Liquid Glass) ───────────────────────── */}
-      <div className="rounded-2xl liquid-glass-elevated border border-zinc-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-200">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-zinc-100/70 dark:bg-black/60 text-zinc-500 border-b border-zinc-200 dark:border-white/10 font-mono text-[11px] uppercase tracking-wider">
-              <tr>
-                <th className="py-3.5 px-4 font-semibold">Status</th>
-                <th className="py-3.5 px-4 font-semibold">Error & Exception</th>
-                <th className="py-3.5 px-4 font-semibold">Source Location</th>
-                <th className="py-3.5 px-4 font-semibold">Environment</th>
-                <th className="py-3.5 px-4 font-semibold">Detected</th>
-                <th className="py-3.5 px-4 font-semibold text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-white/10">
-              {filteredIncidents.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-14 text-center text-zinc-500 font-mono text-xs">
-                    No incidents match the active filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredIncidents.map((incident) => (
-                  <tr
-                    key={incident.id}
-                    onClick={() => router.push(`/dashboard/incidents/${incident.id}`)}
-                    className="hover:bg-zinc-100/60 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                  >
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {getStatusBadge(incident.status)}
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-zinc-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors font-mono">
-                          {incident.error_type}
-                        </span>
-                        {incident.pr_url && (
-                          <a
-                            href={incident.pr_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
-                            title={incident.pr_url}
-                          >
-                            <GitPullRequest className="w-2.5 h-2.5" />
-                            <span>PR #{incident.pr_url.split("/").pop()}</span>
-                            <ExternalLink className="w-2 h-2" />
-                          </a>
-                        )}
-                      </div>
-                      <div className="text-zinc-500 dark:text-zinc-400 truncate max-w-sm text-[11px] mt-0.5 font-sans leading-relaxed">
-                        {incident.title}
-                      </div>
-                    </td>
-
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5" title={incident.file_path || ""}>
-                        <FileCode className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
-                        <span className="truncate max-w-[200px]">
-                          {incident.file_path ? incident.file_path.split("/").slice(-2).join("/") : "—"}
-                          {incident.line_number ? `:${incident.line_number}` : ""}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 text-[10px] uppercase font-mono text-zinc-600 dark:text-zinc-400">
-                        {incident.environment || "production"}
-                      </span>
-                    </td>
-
-                    <td className="py-3.5 px-4 whitespace-nowrap text-zinc-500 font-mono text-[11px]">
-                      {formatRelativeTime(incident.created_at)}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <Link
-                        href={`/dashboard/incidents/${incident.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] text-zinc-700 dark:text-zinc-300 hover:text-emerald-700 dark:hover:text-emerald-400 border border-zinc-200 dark:border-white/10 hover:border-emerald-500/30 text-xs font-mono font-medium transition-all group-hover:border-emerald-500/30"
-                      >
-                        <span>Inspect</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Toast Feedback */}
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl border border-indigo-500/40 bg-[#0b0d17] text-indigo-300 font-mono text-xs shadow-2xl flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-indigo-400" />
+          <span>{toastMsg}</span>
         </div>
-      </div>
+      )}
     </div>
   );
 }

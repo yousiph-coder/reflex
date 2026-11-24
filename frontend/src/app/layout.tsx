@@ -6,8 +6,9 @@ import { TenantProvider } from "@/context/TenantContext";
 import { ToastProvider } from "@/context/ToastContext";
 
 export const metadata: Metadata = {
-  title: "AutoHeal AI — Autonomous SRE & Remediation Engine",
-  description: "Closed-loop incident auto-remediation, sandbox verification, and automated GitHub pull requests.",
+  title: "Reflex — Autonomous SRE & Self-Healing Platform",
+  description:
+    "Reflex catches production crashes from Sentry, verifies patches inside isolated Docker sandboxes, and opens merge-ready GitHub Pull Requests in 38 seconds.",
 };
 
 export default function RootLayout({
@@ -36,7 +37,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="bg-[#000000] text-zinc-100 dark:bg-[#000000] dark:text-zinc-100 min-h-screen antialiased selection:bg-emerald-500/20 selection:text-emerald-400 transition-colors duration-200">
+      <body className="bg-[#07080d] text-white dark:bg-[#07080d] dark:text-white min-h-screen antialiased selection:bg-indigo-500/30 selection:text-indigo-300 transition-colors duration-200">
         <ThemeProvider>
           <AuthProvider>
             <TenantProvider>

@@ -12,7 +12,6 @@ import {
   Lock,
   Mail,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -90,21 +89,30 @@ function LoginContent() {
   const anyLoading = isGitHubLoading || isEmailLoading;
 
   return (
-    <div className="min-h-screen bg-[#000000] dark:bg-[#000000] light:bg-[#ffffff] text-zinc-100 dark:text-zinc-100 light:text-zinc-900 flex flex-col justify-between relative overflow-hidden transition-colors duration-200">
-      {/* Ambient Glow Orbs */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute -bottom-20 -right-20 w-[400px] h-[400px] bg-teal-500/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-[#07080d] text-slate-900 dark:text-white flex flex-col justify-between relative overflow-hidden transition-colors duration-200">
+      {/* Ambient Cosmic Indigo & Violet Spotlight */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div
+          className="absolute -top-28 left-1/2 -translate-x-1/2 w-[850px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
+          style={{
+            background:
+              "radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)",
+          }}
+        />
+      </div>
 
       {/* Top Header */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform glow-emerald">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-center group-hover:scale-105 transition-transform shadow-[0_0_20px_rgba(99,102,241,0.35)]">
+            <div className="w-3.5 h-3.5 rounded-sm bg-gradient-to-tr from-indigo-500 via-violet-500 to-sky-400 rotate-45" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-bold text-base tracking-tight text-white dark:text-white light:text-zinc-950 font-mono">AutoHeal AI</span>
-            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/[0.05] dark:bg-white/[0.05] light:bg-zinc-100 text-zinc-400 dark:text-zinc-400 light:text-zinc-600 border border-white/10 dark:border-white/10 light:border-zinc-200 font-semibold">
-              v1.0
+            <span className="font-bold text-base tracking-tight text-slate-950 dark:text-white font-mono">
+              Reflex
+            </span>
+            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 font-semibold">
+              v2.0
             </span>
           </div>
         </Link>
@@ -112,30 +120,32 @@ function LoginContent() {
           <ThemeToggle />
           <Link
             href="/"
-            className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 hover:text-white dark:hover:text-white light:hover:text-zinc-950 transition-colors flex items-center gap-1.5 font-mono"
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white transition-colors flex items-center gap-1.5 font-mono"
           >
-            Back to Overview
+            Back to Home
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </header>
 
-      {/* Main Auth Card (Apple Liquid Glass Elevated) */}
+      {/* Main Auth Card */}
       <main className="relative z-10 flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-md space-y-5">
           {/* Active Session Notice Banner */}
           {session && (
-            <div className="p-3.5 rounded-2xl liquid-glass border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-between gap-3 glow-emerald">
+            <div className="p-3.5 rounded-2xl border border-indigo-500/40 bg-indigo-500/10 text-slate-900 dark:text-indigo-200 text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                 <span>
                   Signed in as{" "}
-                  <strong className="text-white dark:text-white light:text-zinc-950 font-mono">{session.user?.email || "SRE Engineer"}</strong>
+                  <strong className="text-slate-950 dark:text-white font-mono">
+                    {session.user?.email || "SRE Engineer"}
+                  </strong>
                 </span>
               </div>
               <Link
                 href="/dashboard"
-                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition-colors flex items-center gap-1 glow-emerald flex-shrink-0 font-mono"
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white font-semibold text-[11px] transition-all flex items-center gap-1 flex-shrink-0 font-mono"
               >
                 <LayoutDashboard className="w-3 h-3" />
                 <span>Dashboard</span>
@@ -145,44 +155,46 @@ function LoginContent() {
 
           {/* Session Expiry Banner */}
           {sessionExpired && (
-            <div className="p-3.5 rounded-2xl liquid-glass border-amber-500/40 text-amber-300 text-xs flex items-center gap-2.5 glow-amber font-mono">
-              <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <div className="p-3.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2.5 font-mono">
+              <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
               <span>Your session has expired. Please sign in again.</span>
             </div>
           )}
 
           {errorMsg && (
-            <div className="p-3.5 rounded-2xl liquid-glass border-rose-500/40 text-rose-300 text-xs flex items-center gap-2.5 glow-crimson font-mono">
-              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <div className="p-3.5 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5 font-mono">
+              <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Card */}
-          <div className="rounded-3xl liquid-glass-elevated p-8 sm:p-9 space-y-6">
+          {/* Center-Stage Card */}
+          <div className="rounded-3xl border border-slate-200/90 dark:border-white/10 bg-white/95 dark:bg-[#0b0d17]/95 backdrop-blur-2xl p-8 sm:p-9 shadow-[0_20px_60px_rgba(0,0,0,0.25)] space-y-6">
             {/* Title */}
             <div className="space-y-2 text-center">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-xs font-mono font-medium text-emerald-400 glow-emerald">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 Secure Authentication
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-white dark:text-white light:text-zinc-950 font-mono">Sign in to AutoHeal</h1>
-              <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 leading-relaxed max-w-sm mx-auto font-sans">
-                Access autonomous remediation, pull requests, and SRE telemetry.
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white font-mono">
+                Sign in to Reflex
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                Access autonomous remediation, verified pull requests, and SRE telemetry.
               </p>
             </div>
 
             {/* Actions */}
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               {/* GitHub OAuth */}
               <button
                 type="button"
                 onClick={handleGitHubLogin}
                 disabled={anyLoading}
-                className="w-full h-11 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                className="w-full h-11 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 font-semibold text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
               >
                 {isGitHubLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <GitHubIcon className="w-5 h-5" />
                 )}
@@ -191,41 +203,43 @@ function LoginContent() {
 
               {/* Divider */}
               <div className="flex items-center gap-3 py-1">
-                <div className="flex-1 h-px bg-white/10 dark:bg-white/10 light:border-zinc-200" />
-                <span className="text-[11px] font-mono font-medium text-zinc-500 uppercase tracking-wider">or</span>
-                <div className="flex-1 h-px bg-white/10 dark:bg-white/10 light:border-zinc-200" />
+                <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
+                <span className="text-[11px] font-mono font-medium text-slate-400 uppercase tracking-wider">
+                  or
+                </span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
               </div>
 
               {/* Email / Password Form */}
               <form onSubmit={handleEmailSignIn} className="space-y-3">
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
                     required
                     placeholder="name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full h-10 pl-10 pr-3 rounded-xl bg-white/[0.04] dark:bg-white/[0.04] light:bg-zinc-100 border border-white/10 dark:border-white/10 light:border-zinc-300 text-sm text-white dark:text-white light:text-zinc-950 placeholder-zinc-500 backdrop-blur-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-all font-sans"
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-[#07080d] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
                   />
                 </div>
 
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
                     required
                     placeholder="Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full h-10 pl-10 pr-3 rounded-xl bg-white/[0.04] dark:bg-white/[0.04] light:bg-zinc-100 border border-white/10 dark:border-white/10 light:border-zinc-300 text-sm text-white dark:text-white light:text-zinc-950 placeholder-zinc-500 backdrop-blur-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-all font-sans"
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-[#07080d] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={anyLoading}
-                  className="w-full h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs border border-emerald-500/30 glow-emerald transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                  className="w-full h-11 px-4 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 text-white font-semibold text-xs border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.35)] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
                 >
                   {isEmailLoading ? (
                     <>
@@ -241,11 +255,11 @@ function LoginContent() {
 
             {/* Footer / Links */}
             <div className="text-center pt-2">
-              <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-sans">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Don&apos;t have an account?{" "}
                 <Link
                   href={`/signup?from=${encodeURIComponent(from)}`}
-                  className="text-emerald-400 hover:underline font-mono font-medium"
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono font-semibold"
                 >
                   Create one now
                 </Link>
@@ -256,12 +270,18 @@ function LoginContent() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 w-full max-w-6xl mx-auto px-6 h-16 flex items-center justify-between text-xs text-zinc-500 font-mono">
-        <div>&copy; {new Date().getFullYear()} AutoHeal AI Systems Inc.</div>
+      <footer className="relative z-10 w-full max-w-6xl mx-auto px-6 h-16 flex items-center justify-between text-xs text-slate-500 font-mono">
+        <div>&copy; {new Date().getFullYear()} Reflex Inc.</div>
         <div className="flex gap-4">
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Terms</Link>
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Security</Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Terms
+          </Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Security
+          </Link>
         </div>
       </footer>
     </div>
@@ -272,7 +292,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500 font-mono text-xs">
+        <div className="min-h-screen bg-[#f8fafc] dark:bg-[#07080d] flex items-center justify-center text-slate-500 font-mono text-xs">
           Loading login...
         </div>
       }

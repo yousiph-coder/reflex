@@ -1,502 +1,312 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import React, { useState } from 'react';
 import {
-  AlertCircle,
-  Check,
-  CheckCircle2,
   CreditCard,
-  KeyRound,
-  Loader2,
-  Mail,
-  ShieldCheck,
-  Sparkles,
+  Check,
   Zap,
-} from "lucide-react";
-import { useTenant } from "@/context/TenantContext";
-import { apiClient } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+  Sparkles,
+  ShieldCheck,
+  Crown,
+  Building2,
+  Clock,
+  DollarSign,
+  ArrowUpRight,
+} from 'lucide-react';
 
-export default function BillingPage() {
-  const { currentOrg, billingUsage, refreshUsage } = useTenant();
-  const [isUpgrading, setIsUpgrading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+// ============================================================================
+// STANDALONE REFLEX PLANS & BILLING PAGE (NO API KEY TABS MIXED IN!)
+// File path in VS Code: src/app/dashboard/settings/billing/page.tsx
+// ============================================================================
 
-  const activePlan = (billingUsage?.plan || currentOrg?.plan || "free").toLowerCase();
-  const isFree = activePlan === "free" || activePlan === "starter";
-  const isPro = activePlan === "pro";
-  const isEnterprise = activePlan === "enterprise";
+export default function ReflexBillingPage() {
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>(
+    'monthly'
+  );
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  const healsUsed = billingUsage?.heals_used ?? 0;
-  const maxLimit = billingUsage?.limit ?? 5;
-  const usagePct = Math.min(100, Math.round((healsUsed / maxLimit) * 100));
-
-  useEffect(() => {
-    refreshUsage();
-  }, [refreshUsage]);
-
-  const handleUpgradeToPro = async () => {
-    setIsUpgrading(true);
-    setErrorMessage(null);
-
-    try {
-      const res = await apiClient.createCheckoutSession();
-      if (res?.checkout_url) {
-        window.location.href = res.checkout_url;
-      } else {
-        throw new Error("Missing Stripe Checkout redirection URL.");
-      }
-    } catch (err: any) {
-      console.error("Failed to initiate checkout session:", err);
-      setErrorMessage(
-        err?.message || "Failed to launch Stripe Checkout. Please verify API connection or try again."
-      );
-      setIsUpgrading(false);
-    }
+  const triggerToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3400);
   };
 
+  const proPrice = billingCycle === 'monthly' ? 29 : 24;
+
   return (
-    <div className="space-y-8 max-w-6xl pb-16 select-none">
-      {/* ── Page Header ─────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white dark:text-white light:text-zinc-950 flex items-center gap-2.5 font-mono">
-          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 glow-emerald">
-            <CreditCard className="w-5 h-5 text-emerald-400" />
-          </div>
-          Subscription & Plans
-        </h1>
-        <p className="text-sm text-zinc-400 dark:text-zinc-400 light:text-zinc-600 mt-1.5 font-sans leading-relaxed">
-          Manage your organization subscription, view autonomous heal usage, or unlock unlimited agent remediations.
-        </p>
+    <div className="relative w-full text-slate-900 dark:text-white space-y-8 pb-16">
+      {/* Ambient Background Spotlight Glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div
+          className="absolute -top-24 left-1/2 -translate-x-1/2 w-[960px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
+          style={{
+            background:
+              'radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)',
+          }}
+        />
       </div>
 
-      {/* ── Settings Navigation Tabs (Apple Liquid Glass) ───────── */}
-      <div className="flex border-b border-white/10 dark:border-white/10 light:border-zinc-200 font-mono text-xs">
-        <Link
-          href="/dashboard/settings"
-          className="px-4 py-2.5 font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-600 hover:text-white dark:hover:text-white light:hover:text-zinc-950 border-b-2 border-transparent transition-colors flex items-center gap-2"
-        >
-          <KeyRound className="w-3.5 h-3.5" />
-          API Keys & Integrations
-        </Link>
-        <Link
-          href="/dashboard/settings/billing"
-          className="px-4 py-2.5 font-semibold text-emerald-400 border-b-2 border-emerald-400 flex items-center gap-2 glow-emerald"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          Subscription & Plans
-        </Link>
-      </div>
-
-      {/* ── Error Banner ────────────────────────────────────────── */}
-      {errorMessage && (
-        <div className="p-4 rounded-2xl liquid-glass border-rose-500/30 text-rose-300 text-xs flex items-center justify-between glow-crimson font-mono">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{errorMessage}</span>
+      {/* 1. STANDALONE PAGE HEADER (Strictly Plans & Billing — Zero API Tabs) */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-white/10">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium bg-indigo-500/10 border-indigo-500/25 text-indigo-600 dark:text-indigo-400 mb-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Subscription Quota & Engineering ROI Ledger</span>
           </div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+            Plans & Billing
+          </h1>
+        </div>
+
+        {/* Monthly / Annual Billing Switcher */}
+        <div className="inline-flex p-1 rounded-2xl border bg-slate-100/80 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 font-mono text-xs">
           <button
-            type="button"
-            onClick={() => setErrorMessage(null)}
-            className="text-xs text-rose-400 hover:text-white underline"
+            onClick={() => setBillingCycle('monthly')}
+            className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+              billingCycle === 'monthly'
+                ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
           >
-            Dismiss
+            Monthly
+          </button>
+          <button
+            onClick={() => setBillingCycle('annual')}
+            className={`px-4 py-2 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
+              billingCycle === 'annual'
+                ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            <span>Annual</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+              -17%
+            </span>
           </button>
         </div>
-      )}
+      </div>
 
-      {/* ── Current Plan & Usage Summary Box (Liquid Glass Elevated) */}
-      <div className="rounded-2xl liquid-glass-elevated p-6 sm:p-7 relative overflow-hidden transition-colors duration-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 dark:border-white/10 light:border-zinc-200">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-mono">
-                Active Subscription
+      {/* 2. CURRENT WORKSPACE QUOTA & ROI SUMMARY CARD */}
+      <section className="relative z-10 rounded-3xl border p-6 sm:p-8 bg-white/95 dark:bg-[#0b0d17]/90 backdrop-blur-xl border-slate-200/90 dark:border-white/10 shadow-sm">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          {/* Left 7 Columns: Current Quota Meter */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="px-3 py-1 rounded-full font-mono text-xs font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30">
+                ACTIVE PLAN: STARTER FREE
               </span>
-              {isEnterprise ? (
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                  Enterprise Dedicated
-                </span>
-              ) : isPro ? (
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 glow-emerald">
-                  AutoHeal Pro
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase bg-white/[0.05] dark:bg-white/[0.05] light:bg-zinc-100 text-zinc-400 border border-white/10 dark:border-white/10 light:border-zinc-200">
-                  Free Tier
-                </span>
-              )}
+              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                Resets on Dec 1, 2026
+              </span>
             </div>
-            <p className="text-sm text-zinc-300 dark:text-zinc-300 light:text-zinc-700 font-medium mt-1 font-sans">
-              Organization: <span className="text-white dark:text-white light:text-zinc-950 font-semibold">{currentOrg?.name}</span>
+
+            <h2 className="text-xl font-bold text-slate-950 dark:text-white">
+              3 of 5 free autonomous Reflexes used this month
+            </h2>
+
+            <div className="space-y-2 max-w-lg">
+              <div className="w-full h-3 rounded-full overflow-hidden bg-slate-200 dark:bg-white/10">
+                <div className="h-full w-[60%] rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-400" />
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                2 free autonomous fixes remaining before quota pause.
+              </p>
+            </div>
+          </div>
+
+          {/* Right 5 Columns: Net Engineering ROI */}
+          <div className="lg:col-span-5 grid grid-cols-2 gap-4 font-mono">
+            <div className="rounded-2xl border p-4 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>Time Saved</span>
+                <Clock className="w-4 h-4 text-sky-400" />
+              </div>
+              <div className="mt-2 text-2xl font-extrabold text-sky-600 dark:text-sky-400">
+                7.5 hrs
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                @ 2.5 hrs / PR
+              </div>
+            </div>
+
+            <div className="rounded-2xl border p-4 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>Value Created</span>
+                <DollarSign className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="mt-2 text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                $487.50
+              </div>
+              <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                16.8x vs $29 Pro
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. 3-TIER PRICING COMPARISON GRID */}
+      <section className="relative z-10 grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        {/* TIER 1: STARTER (FREE) */}
+        <div className="rounded-3xl border p-7 bg-white/95 dark:bg-[#0b0d17]/90 border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold">Starter</h3>
+              <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400">
+                Current Plan
+              </span>
+            </div>
+
+            <div className="mt-5 flex items-baseline gap-1 font-mono">
+              <span className="text-4xl font-extrabold">$0</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                / month
+              </span>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              For individual developers testing autonomous self-healing on side
+              projects.
             </p>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {isFree && (
-              <button
-                type="button"
-                onClick={handleUpgradeToPro}
-                disabled={isUpgrading}
-                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/30 glow-emerald transition-all flex items-center gap-1.5 font-mono"
-              >
-                {isUpgrading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                )}
-                <span>Upgrade to Pro ($29/mo)</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Usage Progress / Plan Details */}
-        <div className="pt-5 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-1.5">
-            <span className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-mono">Remediation Limit</span>
-            {isPro || isEnterprise ? (
-              <div className="text-base font-semibold text-emerald-400 flex items-center gap-1.5 font-mono glow-emerald">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>Unlimited Remediations</span>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-zinc-300 dark:text-zinc-300 light:text-zinc-700">{healsUsed} used</span>
-                  <span className="text-zinc-500 dark:text-zinc-500 light:text-zinc-400">{maxLimit} max / month</span>
-                </div>
-                <div className="w-full bg-white/[0.08] dark:bg-white/[0.08] light:bg-zinc-200 rounded-full h-2 overflow-hidden">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all duration-500",
-                      healsUsed >= maxLimit
-                        ? "bg-rose-500 glow-crimson"
-                        : healsUsed >= 4
-                        ? "bg-amber-400 glow-amber"
-                        : "bg-emerald-500 glow-emerald"
-                    )}
-                    style={{ width: `${usagePct}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-mono">Agent Concurrency</span>
-            <div className="text-base font-semibold text-white dark:text-white light:text-zinc-950 font-mono">
-              {isEnterprise ? "Dedicated VPC Clusters" : isPro ? "High-Priority GPT-4o" : "Standard Pool"}
-            </div>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-500 light:text-zinc-400 font-mono">Docker isolated sandbox runner</p>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-mono">Billing Cycle</span>
-            <div className="text-base font-semibold text-white dark:text-white light:text-zinc-950 font-mono">
-              {isEnterprise ? "Annual Contract" : isPro ? "$29 / month via Stripe" : "Free Forever"}
-            </div>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-500 light:text-zinc-400 font-mono">Monthly reset on 1st of each month</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Plans Grid (Production Pricing Cards) ───────────────── */}
-      <div>
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-white dark:text-white light:text-zinc-950 tracking-tight font-mono">
-            Available Subscription Plans
-          </h2>
-          <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 mt-1 font-sans leading-relaxed">
-            Select the plan that fits your continuous delivery and autonomous SRE requirements.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-          {/* ── Card 1: Free Plan ─────────────────────────────────── */}
-          <div className={cn(
-            "rounded-2xl liquid-glass p-6 flex flex-col justify-between transition-all",
-            isFree && "border-white/20 dark:border-white/20 light:border-zinc-400 shadow-md"
-          )}>
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-400 light:text-zinc-500 font-mono">
-                  Starter / Free
-                </span>
-                {isFree && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/[0.08] dark:bg-white/[0.08] light:bg-zinc-200 text-zinc-300 dark:text-zinc-300 light:text-zinc-800 border border-white/10 dark:border-white/10 light:border-zinc-300">
-                    Active
+            <ul className="mt-6 space-y-3 text-xs sm:text-sm">
+              {[
+                '5 autonomous Reflexes / month',
+                'Up to 2 GitHub repositories',
+                'Standard Docker sandbox verification',
+                'Automated GitHub Pull Requests',
+              ].map((feat, idx) => (
+                <li key={idx} className="flex items-center gap-2.5">
+                  <Check className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {feat}
                   </span>
-                )}
-              </div>
-
-              <div className="mt-4 mb-2 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold text-white dark:text-white light:text-zinc-950 tracking-tight font-mono">$0</span>
-                <span className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-500 font-mono">/ month</span>
-              </div>
-              <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 mb-6 leading-relaxed font-sans">
-                For developers experimenting with autonomous error healing on personal repos.
-              </p>
-
-              <div className="border-t border-white/10 dark:border-white/10 light:border-zinc-200 pt-4 space-y-3 mb-8">
-                <div className="text-xs font-semibold text-zinc-300 dark:text-zinc-300 light:text-zinc-700 uppercase tracking-wider font-mono">
-                  Plan Inclusions:
-                </div>
-                <ul className="space-y-2.5 text-xs text-zinc-300 dark:text-zinc-300 light:text-zinc-700">
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">5 Autonomous Heals</strong> / month</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>1 Connected GitHub Repository</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>Standard GPT-4o Patch Generator</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>Automated PR Creation & Diffs</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>Community Discord & GitHub Support</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Free Plan CTA */}
-            <div>
-              {isFree ? (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold bg-white/[0.05] dark:bg-white/[0.05] light:bg-zinc-200 text-zinc-400 dark:text-zinc-400 light:text-zinc-600 border border-white/10 dark:border-white/10 light:border-zinc-300 cursor-not-allowed flex items-center justify-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Current Plan</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold bg-white/[0.02] text-zinc-600 border border-white/5 cursor-not-allowed"
-                >
-                  Included in Your Tier
-                </button>
-              )}
-            </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* ── Card 2: Pro Plan ($29/mo) ─────────────────────────── */}
-          <div className={cn(
-            "rounded-2xl liquid-glass p-6 flex flex-col justify-between transition-all relative overflow-hidden border-emerald-500/40 glow-emerald",
-            isPro && "border-emerald-500/60 ring-1 ring-emerald-500/40"
-          )}>
-            {/* Top Accent Highlight */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-[#05df72] to-teal-400" />
-
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 font-mono">
-                  AutoHeal Pro
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono glow-emerald">
-                  MOST POPULAR
-                </span>
-              </div>
-
-              <div className="mt-4 mb-2 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold text-white dark:text-white light:text-zinc-950 tracking-tight font-mono">$29</span>
-                <span className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-500 font-mono">/ month</span>
-              </div>
-              <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 mb-6 leading-relaxed font-sans">
-                Autonomous SRE engineer for fast-moving startups and continuous production services.
-              </p>
-
-              <div className="border-t border-white/10 dark:border-white/10 light:border-zinc-200 pt-4 space-y-3 mb-8">
-                <div className="text-xs font-semibold text-zinc-300 dark:text-zinc-300 light:text-zinc-700 uppercase tracking-wider font-mono">
-                  Everything in Free, plus:
-                </div>
-                <ul className="space-y-2.5 text-xs text-zinc-200 dark:text-zinc-200 light:text-zinc-800">
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Unlimited Autonomous Heals & PRs</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Unlimited Connected Repositories</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Priority Agent Execution:</strong> GPT-4o & Claude 3.5</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Docker Sandbox Verification</strong> before PRs</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Automated Root Cause Analysis (RCA)</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>Real-Time Crash Telemetry Interceptors</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 glow-emerald" />
-                    <span>Priority Email & Slack Support</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Pro Plan CTA */}
-            <div>
-              {isPro ? (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 cursor-not-allowed flex items-center justify-center gap-1.5 glow-emerald"
-                >
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Current Plan</span>
-                </button>
-              ) : isFree ? (
-                <button
-                  type="button"
-                  onClick={handleUpgradeToPro}
-                  disabled={isUpgrading}
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold text-white bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg border border-emerald-400/30 glow-emerald transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isUpgrading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>Redirecting to Stripe...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                      <span>Upgrade to Pro ($29/mo)</span>
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold bg-white/[0.02] text-zinc-600 border border-white/5 cursor-not-allowed"
-                >
-                  Included in Enterprise
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* ── Card 3: Enterprise Plan ───────────────────────────── */}
-          <div className={cn(
-            "rounded-2xl liquid-glass p-6 flex flex-col justify-between transition-all",
-            isEnterprise && "border-purple-500/60 ring-1 ring-purple-500/40 shadow-xl"
-          )}>
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 font-mono">
-                  Enterprise
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                  VPC ISOLATION
-                </span>
-              </div>
-
-              <div className="mt-4 mb-2 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold text-white dark:text-white light:text-zinc-950 tracking-tight font-mono">Custom</span>
-              </div>
-              <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 mb-6 leading-relaxed font-sans">
-                For organizations with strict compliance, on-prem VPC infrastructure, and custom SLAs.
-              </p>
-
-              <div className="border-t border-white/10 dark:border-white/10 light:border-zinc-200 pt-4 space-y-3 mb-8">
-                <div className="text-xs font-semibold text-zinc-300 dark:text-zinc-300 light:text-zinc-700 uppercase tracking-wider font-mono">
-                  Enterprise Capabilities:
-                </div>
-                <ul className="space-y-2.5 text-xs text-zinc-300 dark:text-zinc-300 light:text-zinc-700">
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Unlimited Everything</strong> (Seats, Repos & Heals)</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span><strong className="text-white dark:text-white light:text-zinc-950 font-mono">Self-Hosted / VPC Docker Runners</strong></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span>Custom LLM Fine-Tuning & Private Models</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span>99.99% Uptime SLA & 15m Incident Response</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span>SOC2 Type II, HIPAA & ISO 27001 Package</span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span>Dedicated Solutions Architect & 24/7 Slack Channel</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Enterprise CTA */}
-            <div>
-              {isEnterprise ? (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/40 cursor-not-allowed flex items-center justify-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Current Plan</span>
-                </button>
-              ) : (
-                <a
-                  href="mailto:sales@autoheal.ai?subject=AutoHeal%20Enterprise%20Plan%20Inquiry"
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-semibold text-zinc-200 dark:text-zinc-200 light:text-zinc-800 bg-white/[0.05] dark:bg-white/[0.05] light:bg-zinc-200 hover:bg-white/[0.1] border border-white/10 dark:border-white/10 light:border-zinc-300 transition-all flex items-center justify-center gap-2"
-                >
-                  <Mail className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Contact Sales</span>
-                </a>
-              )}
-            </div>
-          </div>
+          <button
+            disabled
+            className="mt-8 w-full py-3 rounded-2xl font-mono text-xs font-semibold border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-400 cursor-default"
+          >
+            Current Active Tier
+          </button>
         </div>
-      </div>
 
-      {/* ── Security & Compliance Assurance (Liquid Glass) ────────── */}
-      <div className="rounded-2xl liquid-glass p-6 space-y-4">
-        <div className="flex items-center gap-2 text-white dark:text-white light:text-zinc-950 font-semibold text-sm font-mono">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 glow-emerald" />
-          <span>Enterprise-Grade Security & Privacy Commitments</span>
+        {/* TIER 2: REFLEX PRO ($29/MO — FEATURED) */}
+        <div className="relative rounded-3xl border p-7 bg-gradient-to-b from-indigo-50/80 via-white to-white dark:from-indigo-950/45 dark:via-[#0b0d17] dark:to-[#0b0d17] border-indigo-500/60 shadow-[0_12px_45px_rgba(99,102,241,0.18)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Crown className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-lg font-bold">Reflex Pro</h3>
+              </div>
+              <span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                MOST POPULAR
+              </span>
+            </div>
+
+            <div className="mt-5 flex items-baseline gap-1 font-mono">
+              <span className="text-4xl font-extrabold">${proPrice}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                / month
+              </span>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Unlimited 24/7 autonomous healing and zero-pager peace of mind for
+              production teams.
+            </p>
+
+            <ul className="mt-6 space-y-3 text-xs sm:text-sm">
+              {[
+                'Unlimited autonomous Reflexes / month',
+                'Unlimited connected GitHub repositories',
+                'Priority isolated Docker sandbox (`pytest` & `npm test`)',
+                'Slack & Discord live PR webhook embeds',
+                'One-Click Merge & Instant Rollback shield',
+              ].map((feat, idx) => (
+                <li key={idx} className="flex items-center gap-2.5">
+                  <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span className="text-slate-800 dark:text-slate-200 font-medium">
+                    {feat}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <button
+            onClick={() =>
+              triggerToast(
+                `Opening Stripe / Lemon Squeezy Checkout for Reflex Pro ($${proPrice}/mo)...`
+              )
+            }
+            className="mt-8 w-full py-3.5 rounded-2xl font-mono text-xs font-bold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 shadow-[0_4px_25px_rgba(99,102,241,0.4)] flex items-center justify-center gap-2 transition-all"
+          >
+            <Zap className="w-4 h-4" />
+            <span>Upgrade to Pro — ${proPrice}/mo</span>
+          </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-sans leading-relaxed">
-          <div className="space-y-1">
-            <span className="text-zinc-200 dark:text-zinc-200 light:text-zinc-900 font-medium font-mono">Zero Code Retention</span>
-            <p>Your source code is never used to train foundational AI models. Patches execute in ephemeral containers.</p>
+
+        {/* TIER 3: ENTERPRISE (CUSTOM VPC) */}
+        <div className="rounded-3xl border p-7 bg-white/95 dark:bg-[#0b0d17]/90 border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-violet-400" />
+                <h3 className="text-lg font-bold">Enterprise</h3>
+              </div>
+              <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400">
+                Custom VPC
+              </span>
+            </div>
+
+            <div className="mt-5 flex items-baseline gap-1 font-mono">
+              <span className="text-3xl font-extrabold">Custom</span>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Dedicated self-hosted sandbox runners, SOC2 compliance, and custom
+              SLAs.
+            </p>
+
+            <ul className="mt-6 space-y-3 text-xs sm:text-sm">
+              {[
+                'Self-hosted VPC Docker sandbox runners',
+                'Custom LLM model routing (Private Bedrock/Azure)',
+                'SAML SSO & role-based access control',
+                'Dedicated 99.99% uptime SLA & SRE engineer',
+              ].map((feat, idx) => (
+                <li key={idx} className="flex items-center gap-2.5">
+                  <Check className="w-4 h-4 text-violet-400 shrink-0" />
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {feat}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="space-y-1">
-            <span className="text-zinc-200 dark:text-zinc-200 light:text-zinc-900 font-medium font-mono">Encrypted In Flight & At Rest</span>
-            <p>All telemetry webhooks and GitHub access tokens use AES-256 encryption with automated rotation.</p>
-          </div>
-          <div className="space-y-1">
-            <span className="text-zinc-200 dark:text-zinc-200 light:text-zinc-900 font-medium font-mono">Granular App Scopes</span>
-            <p>The AutoHeal GitHub App only requires minimal read/write repo contents and pull request permissions.</p>
-          </div>
+
+          <button
+            onClick={() =>
+              triggerToast('Enterprise inquiry dispatched to Reflex founders!')
+            }
+            className="mt-8 w-full py-3 rounded-2xl font-mono text-xs font-semibold border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-800 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all"
+          >
+            <span>Contact Founders</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
         </div>
-      </div>
+      </section>
+
+      {/* Toast Feedback */}
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl border border-indigo-500/40 bg-[#0b0d17] text-indigo-300 font-mono text-xs shadow-2xl flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-indigo-400" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
     </div>
   );
 }

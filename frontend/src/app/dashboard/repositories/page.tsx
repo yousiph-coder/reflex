@@ -1,616 +1,423 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
-  AlertCircle,
-  CheckCircle2,
-  Filter,
   FolderGit2,
-  LayoutGrid,
-  List,
+  GitBranch,
   Plus,
-  Radio,
-  RefreshCw,
-  Search,
+  ExternalLink,
+  ShieldCheck,
   Sparkles,
-  TableProperties,
+  RefreshCw,
+  HeartPulse,
+  Terminal,
+  Search,
+  Lock,
+  Trash2,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
-import { AnalyticsOverview, RemediationMode, Repository } from "@/lib/types";
 import { apiClient } from "@/lib/api-client";
-import { useTenant } from "@/context/TenantContext";
-import { useToast } from "@/context/ToastContext";
-import { supabase } from "@/lib/supabase";
-import { RepoStatsBanner } from "@/components/repositories/RepoStatsBanner";
-import { RepoCard } from "@/components/repositories/RepoCard";
-import { RepoTableView } from "@/components/repositories/RepoTableView";
-import { GuidedRepoOnboarding } from "@/components/repositories/GuidedRepoOnboarding";
-import { ConnectRepoModal } from "@/components/repositories/ConnectRepoModal";
-import { EditMappingModal } from "@/components/repositories/EditMappingModal";
-import { SentryWebhookSnippetModal } from "@/components/repositories/SentryWebhookSnippetModal";
-import { DeleteConfirmModal } from "@/components/repositories/DeleteConfirmModal";
-import { cn } from "@/lib/utils";
+import { Repository } from "@/lib/types";
 
-const GITHUB_APP_INSTALL_URL = `https://github.com/apps/${
-  process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "auto-heal"
-}/installations/new`;
+const INSTALL_ID_KEY = "reflex_github_installation_id";
 
 function RepositoriesContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const syncedInstallationRef = useRef<string | null>(null);
-  const toast = useToast();
+  const router = useRouter();
 
-  // Auth and tenant session state
-  const { session, isLoading, currentOrg: currentTenant } = useTenant();
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [installationId, setInstallationId] = useState<string>("185362414");
 
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
-  const [isReposLoading, setIsReposLoading] = useState(true);
-  const [isSyncingInstallation, setIsSyncingInstallation] = useState(false);
-  const [isSmokeTesting, setIsSmokeTesting] = useState(false);
-  const [showGuidedOnboarding, setShowGuidedOnboarding] = useState(false);
-
-  // Dual View Mode: "grid" vs "table"
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedMode, setSelectedMode] = useState<string>("ALL");
-  const [selectedLanguage, setSelectedLanguage] = useState<string>("ALL");
-
-  // Modals state
-  const [isConnectOpen, setIsConnectOpen] = useState(false);
-  const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
-  const [deletingRepo, setDeletingRepo] = useState<Repository | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [webhookGuideRepo, setWebhookGuideRepo] = useState<Repository | null>(null);
-
-  // Load view preference on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("autoheal_repo_view_mode");
-      if (saved === "table" || saved === "grid") {
-        setViewMode(saved);
-      }
-    } catch {}
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3600);
   }, []);
 
-  const handleSetViewMode = (mode: "grid" | "table") => {
-    setViewMode(mode);
+  // Load real repositories from FastAPI / PostgreSQL
+  const fetchLiveRepos = useCallback(async () => {
     try {
-      localStorage.setItem("autoheal_repo_view_mode", mode);
-    } catch {}
-  };
-
-  const loadRepositories = useCallback(async () => {
-    if (isLoading || !session) return;
-    if (!currentTenant) return;
-
-    setIsReposLoading(true);
-    try {
-      let data: Repository[];
-      try {
-        data = await apiClient.get<Repository[]>("/api/v1/repositories");
-      } catch (err: any) {
-        const errorMsg = typeof err?.message === "string" ? err.message : "";
-        if (errorMsg.includes("401")) {
-          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-          if (!refreshError && refreshData.session) {
-            data = await apiClient.get<Repository[]>("/api/v1/repositories");
-          } else {
-            throw err;
-          }
-        } else if (errorMsg.includes("403")) {
-          setRepositories([]);
-          return;
-        } else {
-          throw err;
-        }
-      }
-
-      if (Array.isArray(data)) {
-        setRepositories(data);
-      } else {
-        setRepositories([]);
-      }
-
-      try {
-        const overviewRes = await apiClient.getOverviewMetrics().catch(() => null);
-        if (overviewRes) setAnalytics(overviewRes);
-      } catch {}
+      setIsLoading(true);
+      setErrorMsg(null);
+      const data = await apiClient.getRepositories();
+      setRepos(data || []);
     } catch (err: any) {
-      console.error("Failed to load repositories:", err);
-      const errorMsg = typeof err?.message === "string" ? err.message : "";
-      if (errorMsg.includes("401")) {
-        toast.error("Session expired", "Please log in again.");
-      } else {
-        toast.error("Failed to load repositories", errorMsg || "Please refresh or check credentials.");
-      }
-      setRepositories([]);
+      setErrorMsg(
+        err?.message || "Could not load repositories from backend (check FastAPI server)."
+      );
+      setRepos([]);
     } finally {
-      setIsReposLoading(false);
+      setIsLoading(false);
     }
-  }, [isLoading, session, currentTenant, toast]);
+  }, []);
 
-  // Trigger manual sync for an installation ID
-  const handleManualSync = useCallback(
-    async (installationId: number | string = 168046767) => {
-      if (isLoading || !session) return;
-      setIsSyncingInstallation(true);
-      try {
-        let synced: Repository[];
-        try {
-          synced = await apiClient.post<Repository[]>("/api/v1/repositories/sync", {
-            installation_id: Number(installationId),
-          });
-        } catch (err: any) {
-          const errorMsg = typeof err?.message === "string" ? err.message : "";
-          if (errorMsg.includes("401")) {
-            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-            if (!refreshError && refreshData.session) {
-              synced = await apiClient.post<Repository[]>("/api/v1/repositories/sync", {
-                installation_id: Number(installationId),
-              });
-            } else {
-              throw err;
-            }
-          } else {
-            throw err;
-          }
-        }
-
-        toast.success("GitHub Synchronized", "Repositories updated from GitHub App installation.");
-        if (Array.isArray(synced) && synced.length > 0) {
-          setRepositories(synced);
-        } else {
-          await loadRepositories();
-        }
-      } catch (err: any) {
-        console.error("Failed to sync GitHub installation:", err);
-        toast.error("Sync Failed", err?.message || "Could not synchronize with GitHub.");
-      } finally {
-        setIsSyncingInstallation(false);
-      }
-    },
-    [isLoading, session, loadRepositories, toast]
-  );
-
-  // Trigger Live Smoke Test
-  const handleTriggerSmokeTest = async () => {
-    setIsSmokeTesting(true);
-    try {
-      // Trigger a synthetic crash event to test the webhook and sandbox pipeline
-      await apiClient.post("/api/v1/webhooks/sentry", {
-        action: "created",
-        data: {
-          issue: {
-            id: "SMOKE-TEST-" + Date.now(),
-            title: "ZeroDivisionError: division by zero in calculate_rate",
-            project: { slug: repositories[0]?.name || "autoheal-demo" },
-            metadata: {
-              type: "ZeroDivisionError",
-              value: "division by zero",
-              filename: "app/services/calculator.py",
-            },
-          },
-        },
-      });
-      toast.success("Smoke Test Executed", "Synthetic crash dispatched to sandbox test runner.");
-    } catch {
-      // In case simulation mock is active
-      toast.info("Simulation Dispatched", "Smoke test event received by pipeline.");
-    } finally {
-      setIsSmokeTesting(false);
-    }
-  };
-
-  // Detect URL query param installation_id on page load
-  useEffect(() => {
-    if (isLoading || !session) return;
-    if (!currentTenant) return;
-
-    const installationId = searchParams.get("installation_id");
-
-    if (installationId) {
-      if (syncedInstallationRef.current === installationId) {
+  // Sync directly with GitHub App Installation ID
+  const handleSyncGithub = useCallback(
+    async (overrideInstallId?: string) => {
+      const targetId = overrideInstallId || installationId;
+      if (!targetId) {
+        showToast("Missing GitHub Installation ID. Click 'Install on New Repo' first.");
         return;
       }
-      syncedInstallationRef.current = installationId;
+      try {
+        setIsSyncing(true);
+        setErrorMsg(null);
+        showToast(`Syncing repositories from GitHub Installation #${targetId}...`);
+        const synced = await apiClient.syncRepositories(targetId);
+        setRepos(synced || []);
+        showToast(
+          `Synced ${synced?.length ?? 0} live repositories from GitHub (#${targetId})!`
+        );
+      } catch (err: any) {
+        setErrorMsg(
+          err?.message || "GitHub sync failed. Make sure FastAPI backend is running."
+        );
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    [installationId, showToast]
+  );
 
-      const syncInstallation = async () => {
-        setIsSyncingInstallation(true);
-        try {
-          const synced = await apiClient.post<Repository[]>("/api/v1/repositories/sync", {
-            installation_id: Number(installationId),
-          });
-          toast.success("GitHub App Connected", "Repositories imported successfully!");
-          router.replace("/dashboard/repositories");
-          if (Array.isArray(synced) && synced.length > 0) {
-            setRepositories(synced);
-          } else {
-            await loadRepositories();
-          }
-        } catch (err: any) {
-          toast.error("Sync Failed", err?.message || "Failed to sync GitHub installation.");
-          router.replace("/dashboard/repositories");
-          await loadRepositories();
-        } finally {
-          setIsSyncingInstallation(false);
-        }
-      };
-
-      syncInstallation();
-    } else if (!syncedInstallationRef.current) {
-      loadRepositories();
-    }
-  }, [isLoading, session, currentTenant, searchParams, router, loadRepositories, toast]);
-
-  // Update remediation policy
-  const handleUpdateMode = async (id: string, mode: RemediationMode) => {
+  // On mount: detect ?installation_id=... callback from GitHub App install!
+  useEffect(() => {
+    const urlInstallId = searchParams.get("installation_id");
+    let savedId = "185362414";
     try {
-      const updated = await apiClient.updateRepository(id, {
-        remediation_mode: mode,
-        auto_heal_enabled: mode !== "disabled",
-      });
-      setRepositories((prev) => prev.map((r) => (r.id === id ? updated : r)));
-      toast.success("Policy Updated", `${updated.full_name} remediation mode set to ${mode}`);
-    } catch {
-      toast.error("Update Failed", "Could not update remediation policy.");
-    }
-  };
+      const stored = localStorage.getItem(INSTALL_ID_KEY);
+      if (stored) savedId = stored;
+    } catch {}
 
-  // Toggle master AutoHeal switch
-  const handleToggleAutoHeal = async (id: string, enabled: boolean) => {
-    try {
-      const updated = await apiClient.updateRepository(id, {
-        auto_heal_enabled: enabled,
-        remediation_mode: enabled ? "autonomous" : "disabled",
+    if (urlInstallId) {
+      setInstallationId(urlInstallId);
+      try {
+        localStorage.setItem(INSTALL_ID_KEY, urlInstallId);
+      } catch {}
+      // Automatically sync the newly installed GitHub repositories!
+      handleSyncGithub(urlInstallId).then(() => {
+        router.replace("/dashboard/repositories");
       });
-      setRepositories((prev) => prev.map((r) => (r.id === id ? updated : r)));
-      toast.info(
-        enabled ? "Autonomous Engine Active" : "Autonomous Engine Paused",
-        `${updated.full_name} is ${enabled ? "now auto-healing errors" : "in telemetry only mode"}.`
-      );
-    } catch {
-      toast.error("Toggle Failed", "Could not update autoheal state.");
+    } else {
+      setInstallationId(savedId);
+      fetchLiveRepos();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Trigger branch sync & health check
-  const handleSync = async (id: string) => {
-    const res = await apiClient.triggerRepoSync(id);
-    setRepositories((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, last_synced_at: res.synced_at } : r))
+  // Toggle Auto-PR live in PostgreSQL
+  const handleToggleAutoPr = async (repo: Repository) => {
+    const nextEnabled = !repo.auto_heal_enabled;
+    setRepos((prev) =>
+      prev.map((r) =>
+        r.id === repo.id ? { ...r, auto_heal_enabled: nextEnabled } : r
+      )
     );
-    toast.success("Repository Synced", res.message);
-  };
-
-  // Repository created from modal
-  const handleRepoCreated = (newRepo: Repository) => {
-    setRepositories((prev) => [newRepo, ...prev]);
-    toast.success("Repository Connected", `${newRepo.full_name} is now monitored by AutoHeal.`);
-  };
-
-  // Repository updated from edit modal
-  const handleRepoSaved = (updatedRepo: Repository) => {
-    setRepositories((prev) => prev.map((r) => (r.id === updatedRepo.id ? updatedRepo : r)));
-    toast.success("Configuration Saved", `Settings updated for ${updatedRepo.full_name}`);
-  };
-
-  // Delete / Disconnect repository
-  const handleConfirmDelete = async (repoId: string) => {
-    setIsDeleting(true);
     try {
-      await apiClient.deleteRepository(repoId);
-      setRepositories((prev) => prev.filter((r) => r.id !== repoId));
-      toast.info("Repository Disconnected", "Autonomous PR creation has been deactivated.");
-      setDeletingRepo(null);
+      await apiClient.updateRepository(repo.id, {
+        auto_heal_enabled: nextEnabled,
+      });
+      showToast(
+        `Autonomous PR ${nextEnabled ? "enabled" : "paused"} for ${repo.full_name}`
+      );
     } catch {
-      toast.error("Disconnection Failed", "Unable to disconnect repository.");
-    } finally {
-      setIsDeleting(false);
+      // Revert if API fails
+      setRepos((prev) =>
+        prev.map((r) =>
+          r.id === repo.id ? { ...r, auto_heal_enabled: !nextEnabled } : r
+        )
+      );
+      showToast("Failed to update repository setting on backend.");
     }
   };
 
-  // Filters
-  const languages = Array.from(new Set(repositories.map((r) => r.language).filter(Boolean)));
-
-  const filteredRepos = repositories.filter((repo) => {
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchName = repo.full_name.toLowerCase().includes(term);
-      const matchDesc = repo.description?.toLowerCase().includes(term);
-      const matchSentry = repo.sentry_mappings?.some(
-        (m) =>
-          m.project_slug.toLowerCase().includes(term) ||
-          m.organization_slug.toLowerCase().includes(term)
-      );
-      if (!matchName && !matchDesc && !matchSentry) return false;
+  // Delete Repository live from PostgreSQL
+  const handleDeleteRepo = async (repo: Repository) => {
+    try {
+      await apiClient.deleteRepository(repo.id);
+      setRepos((prev) => prev.filter((r) => r.id !== repo.id));
+      showToast(`Removed ${repo.full_name} from Reflex.`);
+    } catch {
+      showToast(`Could not delete ${repo.full_name}. Check backend connection.`);
     }
+  };
 
-    if (selectedMode !== "ALL" && repo.remediation_mode !== selectedMode) {
-      return false;
+  // Trigger single repo branch sync
+  const handleTriggerRepoSync = async (repo: Repository) => {
+    try {
+      showToast(`Syncing branch '${repo.default_branch}' for ${repo.full_name}...`);
+      const res = await apiClient.triggerRepoSync(repo.id);
+      showToast(res.message);
+    } catch (err: any) {
+      showToast(err?.message || `Sync failed for ${repo.full_name}`);
     }
+  };
 
-    if (selectedLanguage !== "ALL" && repo.language !== selectedLanguage) {
-      return false;
-    }
-
-    return true;
-  });
+  const filteredRepos = repos.filter(
+    (r) =>
+      r.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.language || "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="space-y-7">
-      {/* ── Page Header ─────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="relative w-full text-slate-900 dark:text-white space-y-8 pb-16">
+      {/* Ambient Background Spotlight Glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div
+          className="absolute -top-24 left-1/2 -translate-x-1/2 w-[960px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
+          style={{
+            background:
+              "radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)",
+          }}
+        />
+      </div>
+
+      {/* 1. TOP HEADER & GITHUB APP TELEMETRY */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-white/10">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2.5 font-mono">
-            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 dark:text-emerald-400 shadow-glow-emerald">
-              <FolderGit2 className="w-5 h-5" />
-            </div>
-            Repositories & Sentry Mappings
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium bg-indigo-500/10 border-indigo-500/25 text-indigo-600 dark:text-indigo-400 mb-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>
+              GitHub App ID: 5193276 · Installation #{installationId} Live
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+            Connected Repositories
           </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1.5 font-sans leading-relaxed">
-            Link GitHub repositories with Sentry error streams to enable closed-loop autonomous bug fixing and verified pull requests.
-          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-shrink-0 font-mono">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setShowGuidedOnboarding((prev) => !prev)}
-            className={cn(
-              "flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-medium transition-all",
-              showGuidedOnboarding
-                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-glow-emerald"
-                : "liquid-glass border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white"
-            )}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>1-2-3 Guide</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleManualSync(168046767)}
-            disabled={isSyncingInstallation}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl liquid-glass border border-zinc-200 dark:border-white/10 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition-all disabled:opacity-50"
-            title="Manual sync with GitHub App installation ID 168046767"
+            onClick={() => handleSyncGithub()}
+            disabled={isSyncing}
+            className="px-3.5 py-2.5 rounded-xl font-mono text-xs font-medium border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 flex items-center gap-1.5 transition-all disabled:opacity-60"
           >
             <RefreshCw
-              className={cn("w-3.5 h-3.5 text-emerald-500", isSyncingInstallation && "animate-spin")}
+              className={`w-3.5 h-3.5 text-indigo-500 ${
+                isSyncing ? "animate-spin" : ""
+              }`}
             />
-            <span>Sync App</span>
+            <span>{isSyncing ? "Syncing..." : "Sync GitHub"}</span>
           </button>
 
           <a
-            href={GITHUB_APP_INSTALL_URL}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs shadow-glow-emerald hover:shadow-glow-emerald-lg transition-all"
+            href="https://github.com/apps/auto-heal/installations/new"
+            target="_blank"
+            rel="noreferrer"
+            className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.35)] flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
-            Connect Repository
+            <span>Install on New Repo</span>
           </a>
         </div>
       </div>
 
-      {/* ── Guided 1-2-3 Onboarding Section ──────────────────────── */}
-      {(showGuidedOnboarding || repositories.length === 0) && (
-        <GuidedRepoOnboarding
-          githubAppUrl={GITHUB_APP_INSTALL_URL}
-          hasRepos={repositories.length > 0}
-          onOpenSentryGuide={() => setWebhookGuideRepo(repositories[0] || null)}
-          onTriggerSmokeTest={handleTriggerSmokeTest}
-          isSmokeTesting={isSmokeTesting}
-        />
-      )}
-
-      {/* ── Metric Cards ─────────────────────────────────────────── */}
-      <RepoStatsBanner repositories={repositories} analytics={analytics} />
-
-      {/* ── Filter Toolbar & Dual View Switcher (Grid / Table) ───── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-2xl liquid-glass border border-zinc-200 dark:border-white/10">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by repo (e.g. payment-service) or Sentry project..."
-            className="w-full pl-10 pr-4 py-2 rounded-xl bg-zinc-100 dark:bg-black/50 border border-zinc-300 dark:border-white/10 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:outline-none focus:border-emerald-500/80 transition-colors font-sans"
-          />
-        </div>
-
-        {/* Dropdowns, Refresh, and Dual View Toggle */}
-        <div className="flex flex-wrap items-center gap-2 font-mono">
-          {/* Mode Filter */}
-          <select
-            value={selectedMode}
-            onChange={(e) => setSelectedMode(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-black/50 border border-zinc-300 dark:border-white/10 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-emerald-500/80 transition-colors"
-          >
-            <option value="ALL">All Modes</option>
-            <option value="autonomous">Autonomous (Auto-PR)</option>
-            <option value="draft_pr">Draft PR</option>
-            <option value="manual_approval">Proposal Only</option>
-            <option value="disabled">Disabled</option>
-          </select>
-
-          {/* Language Filter */}
-          {languages.length > 0 && (
-            <select
-              value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-black/50 border border-zinc-300 dark:border-white/10 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-emerald-500/80 transition-colors"
-            >
-              <option value="ALL">All Languages</option>
-              {languages.map((lang) => (
-                <option key={lang} value={lang}>
-                  {lang}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {/* Dual View Toggle Buttons (Grid vs Table) */}
-          <div className="flex items-center p-0.5 rounded-xl liquid-glass border border-zinc-300 dark:border-white/10">
-            <button
-              type="button"
-              onClick={() => handleSetViewMode("grid")}
-              className={cn(
-                "p-1.5 rounded-lg transition-all",
-                viewMode === "grid"
-                  ? "bg-zinc-900 text-white dark:bg-white dark:text-black shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-              )}
-              title="Grid Cards View"
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSetViewMode("table")}
-              className={cn(
-                "p-1.5 rounded-lg transition-all",
-                viewMode === "table"
-                  ? "bg-zinc-900 text-white dark:bg-white dark:text-black shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
-              )}
-              title="Dense Data Table View"
-            >
-              <TableProperties className="w-3.5 h-3.5" />
-            </button>
+      {/* Error Banner if Backend is unreachable */}
+      {errorMsg && (
+        <div className="relative z-10 p-4 rounded-2xl border border-rose-500/35 bg-rose-500/10 text-rose-700 dark:text-rose-300 font-mono text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
           </div>
-
-          {/* Refresh Button */}
           <button
             type="button"
-            onClick={loadRepositories}
-            disabled={isLoading || isReposLoading}
-            className="p-2 rounded-xl liquid-glass border border-zinc-300 dark:border-white/10 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-            title="Refresh Repositories"
+            onClick={fetchLiveRepos}
+            className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 font-semibold"
           >
-            <RefreshCw
-              className={cn("w-3.5 h-3.5", isReposLoading && "animate-spin text-emerald-500")}
-            />
+            Retry
           </button>
+        </div>
+      )}
+
+      {/* 2. SEARCH BAR & SUMMARY */}
+      <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search connected repositories..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-2xl border text-xs font-mono bg-white/90 dark:bg-[#0b0d17]/90 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 font-mono text-xs text-slate-500 dark:text-slate-400">
+          <Lock className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Live PostgreSQL Sync · {repos.length} Repositories Connected</span>
         </div>
       </div>
 
-      {/* ── Repositories Views (Grid Cards vs Dense Table) ───────── */}
-      <div className="space-y-4">
-        {(isLoading || isReposLoading) && repositories.length === 0 ? (
-          <div className="p-16 rounded-3xl liquid-glass text-center space-y-3 font-mono">
-            <RefreshCw className="w-6 h-6 animate-spin text-emerald-500 mx-auto" />
-            <p className="text-xs text-zinc-500">Loading connected repositories & mappings...</p>
+      {/* 3. LOADING / EMPTY / LIVE REPOSITORY CARDS */}
+      {isLoading ? (
+        <div className="relative z-10 py-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-mono text-xs">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          <span>Loading connected repositories from Reflex backend...</span>
+        </div>
+      ) : filteredRepos.length === 0 ? (
+        <div className="relative z-10 rounded-3xl border border-dashed border-slate-300 dark:border-white/15 bg-white/60 dark:bg-[#0b0d17]/60 p-12 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-500 mx-auto">
+            <FolderGit2 className="w-6 h-6" />
           </div>
-        ) : filteredRepos.length === 0 ? (
-          <div className="p-16 rounded-3xl liquid-glass text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl liquid-glass border border-zinc-200 dark:border-white/10 flex items-center justify-center text-zinc-500 mx-auto">
-              <FolderGit2 className="w-7 h-7" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold font-mono text-zinc-900 dark:text-white">
-                No repositories found
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto mt-1 leading-relaxed">
-                {searchTerm || selectedMode !== "ALL" || selectedLanguage !== "ALL"
-                  ? "No repositories match your active search filters. Try clearing your query."
-                  : "Connect your first GitHub repository and link it to Sentry to start autonomous healing."}
-              </p>
-            </div>
-            {searchTerm || selectedMode !== "ALL" || selectedLanguage !== "ALL" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setSelectedMode("ALL");
-                  setSelectedLanguage("ALL");
-                }}
-                className="px-4 py-2 rounded-xl liquid-glass border border-zinc-300 dark:border-white/10 text-xs font-mono text-zinc-800 dark:text-zinc-200 transition-colors"
-              >
-                Clear Filters
-              </button>
-            ) : (
-              <div className="flex flex-wrap items-center justify-center gap-3 font-mono">
-                <a
-                  href={GITHUB_APP_INSTALL_URL}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs shadow-glow-emerald hover:shadow-glow-emerald-lg transition-all"
-                >
-                  <Plus className="w-4 h-4" />
-                  Connect Repository
-                </a>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              No repositories connected yet
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+              Click <strong>Sync GitHub</strong> to pull repositories from Installation #{installationId}, or install the GitHub App on a new repository.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => handleSyncGithub()}
+              className="px-4 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500"
+            >
+              Sync Installation #{installationId}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {filteredRepos.map((repo) => (
+            <div
+              key={repo.id}
+              className="rounded-3xl border p-6 bg-white/95 dark:bg-[#0b0d17]/90 backdrop-blur-xl border-slate-200/90 dark:border-white/10 hover:border-indigo-500/40 shadow-sm transition-all flex flex-col justify-between space-y-6"
+            >
+              {/* Card Header */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-500 dark:text-indigo-400 shrink-0">
+                    <FolderGit2 className="w-5 h-5" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <a
+                      href={`https://github.com/${repo.full_name}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-base font-bold text-slate-950 dark:text-white hover:text-indigo-500 dark:hover:text-indigo-400 flex items-center gap-1.5 truncate"
+                    >
+                      <span className="truncate">{repo.full_name}</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-60 shrink-0" />
+                    </a>
+
+                    <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-xs text-slate-500 dark:text-slate-400">
+                      <span className="inline-flex items-center gap-1">
+                        <GitBranch className="w-3 h-3 text-indigo-400" />
+                        {repo.default_branch}
+                      </span>
+                      <span>·</span>
+                      <span>{repo.language || "Auto-detect"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <span className="px-3 py-1 rounded-full font-mono text-xs font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
+                  <HeartPulse className="w-3.5 h-3.5" />
+                  {repo.status === "connected" ? "Active" : "Sync Error"}
+                </span>
               </div>
-            )}
-          </div>
-        ) : viewMode === "table" ? (
-          /* Dense Data Table View */
-          <RepoTableView
-            repositories={filteredRepos}
-            onUpdateMode={handleUpdateMode}
-            onToggleAutoHeal={handleToggleAutoHeal}
-            onSync={handleSync}
-            onEdit={(r) => setEditingRepo(r)}
-            onDelete={(r) => setDeletingRepo(r)}
-            onOpenWebhookGuide={(r) => setWebhookGuideRepo(r)}
-          />
-        ) : (
-          /* Grid Cards View */
-          <div className="grid grid-cols-1 gap-4">
-            {filteredRepos.map((repo) => (
-              <RepoCard
-                key={repo.id}
-                repo={repo}
-                onUpdateMode={handleUpdateMode}
-                onToggleAutoHeal={handleToggleAutoHeal}
-                onSync={handleSync}
-                onEdit={(r) => setEditingRepo(r)}
-                onDelete={(r) => setDeletingRepo(r)}
-                onOpenWebhookGuide={(r) => setWebhookGuideRepo(r)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* ── Modals ─────────────────────────────────────────────────── */}
-      <ConnectRepoModal
-        isOpen={isConnectOpen}
-        onClose={() => setIsConnectOpen(false)}
-        onCreated={handleRepoCreated}
-      />
+              {/* 3 Live Telemetry Boxes */}
+              <div className="grid grid-cols-3 gap-3 font-mono">
+                <div className="rounded-2xl border p-3.5 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
+                  <div className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                    Healed PRs
+                  </div>
+                  <div className="mt-1 text-lg font-bold text-indigo-600 dark:text-indigo-400">
+                    {repo.healed_prs_count ?? repo.total_incidents_resolved ?? 0}
+                  </div>
+                </div>
 
-      <EditMappingModal
-        repo={editingRepo}
-        isOpen={Boolean(editingRepo)}
-        onClose={() => setEditingRepo(null)}
-        onSaved={handleRepoSaved}
-      />
+                <div className="rounded-2xl border p-3.5 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
+                  <div className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                    Open Crashes
+                  </div>
+                  <div className="mt-1 text-lg font-bold text-sky-600 dark:text-sky-400">
+                    {repo.open_incidents_count ?? 0}
+                  </div>
+                </div>
 
-      <SentryWebhookSnippetModal
-        repo={webhookGuideRepo}
-        isOpen={Boolean(webhookGuideRepo)}
-        onClose={() => setWebhookGuideRepo(null)}
-      />
+                <div className="rounded-2xl border p-3.5 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
+                  <div className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                    Test Runner
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 truncate pt-1">
+                    {repo.sandbox_test_cmd || "pytest / npm test"}
+                  </div>
+                </div>
+              </div>
 
-      <DeleteConfirmModal
-        repo={deletingRepo}
-        isOpen={Boolean(deletingRepo)}
-        onClose={() => setDeletingRepo(null)}
-        onConfirm={handleConfirmDelete}
-        isDeleting={isDeleting}
-      />
+              {/* Footer Controls */}
+              <div className="pt-4 border-t border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAutoPr(repo)}
+                  className="flex items-center gap-2.5 text-xs font-mono"
+                >
+                  <span
+                    className={`w-9 h-5 rounded-full p-0.5 transition-colors flex items-center ${
+                      repo.auto_heal_enabled
+                        ? "bg-indigo-500 justify-end"
+                        : "bg-slate-300 dark:bg-white/15 justify-start"
+                    }`}
+                  >
+                    <span className="w-4 h-4 rounded-full bg-white shadow" />
+                  </span>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">
+                    Auto-PR on Crash
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerRepoSync(repo)}
+                    className="px-3 py-1.5 rounded-xl font-mono text-xs font-medium border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Sync Branch</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRepo(repo)}
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-white/10 hover:border-rose-500/40 hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-colors"
+                    title="Disconnect repository"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Toast Feedback */}
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl border border-indigo-500/40 bg-[#0b0d17] text-indigo-300 font-mono text-xs shadow-2xl flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-indigo-400" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function RepositoriesPage() {
+export default function ReflexRepositoriesPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-16 rounded-3xl liquid-glass text-center space-y-3 font-mono text-xs text-zinc-500">
-          <RefreshCw className="w-6 h-6 animate-spin text-emerald-500 mx-auto" />
-          <p>Loading repositories...</p>
+        <div className="py-16 flex items-center justify-center text-slate-400 font-mono text-xs">
+          Loading repositories...
         </div>
       }
     >

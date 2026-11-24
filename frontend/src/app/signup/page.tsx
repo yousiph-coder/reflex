@@ -10,9 +10,7 @@ import {
   Loader2,
   Lock,
   Mail,
-  MailCheck,
   ShieldCheck,
-  Sparkles,
   User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -31,7 +29,7 @@ function GitHubIcon({ className }: { className?: string }) {
   );
 }
 
-function SignUpContent() {
+function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/dashboard";
@@ -42,10 +40,10 @@ function SignUpContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [confirmationNotice, setConfirmationNotice] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // ── GitHub OAuth ────────────────────────────────────────────
-  const handleGitHubSignUp = async () => {
+  const handleGitHubSignup = async () => {
     try {
       setIsGitHubLoading(true);
       setErrorMsg(null);
@@ -56,8 +54,7 @@ function SignUpContent() {
         },
       });
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : "GitHub registration failed");
-    } finally {
+      setErrorMsg(err instanceof Error ? err.message : "GitHub signup failed");
       setIsGitHubLoading(false);
     }
   };
@@ -65,41 +62,39 @@ function SignUpContent() {
   // ── Email / Password Sign Up ────────────────────────────────
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
-
-    // Validation
-    if (!email.trim() || !password) {
+    if (!email || !password) {
       setErrorMsg("Please enter both email and password.");
       return;
     }
-
     if (password.length < 8) {
-      setErrorMsg("Password must be at least 8 characters long.");
+      setErrorMsg("Password must be at least 8 characters.");
       return;
     }
 
     try {
       setIsEmailLoading(true);
+      setErrorMsg(null);
+      setSuccessMsg(null);
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            full_name: fullName.trim() || email.split("@")[0],
+            full_name: fullName || undefined,
           },
         },
       });
 
       if (error) throw error;
 
-      // If email confirmation is required by Supabase project
-      if (data?.user && !data.session) {
-        setConfirmationNotice(true);
-      } else {
+      if (data.session) {
         router.push(from);
+      } else {
+        setSuccessMsg("Account created! Check your email to confirm or sign in.");
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to create account.");
+      setErrorMsg(err instanceof Error ? err.message : "Could not create account");
     } finally {
       setIsEmailLoading(false);
     }
@@ -108,212 +103,204 @@ function SignUpContent() {
   const anyLoading = isGitHubLoading || isEmailLoading;
 
   return (
-    <div className="min-h-screen bg-[#000000] dark:bg-[#000000] light:bg-[#ffffff] text-zinc-100 dark:text-zinc-100 light:text-zinc-900 flex flex-col justify-between relative overflow-hidden transition-colors duration-200">
-      {/* Ambient Glow Orbs */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute -bottom-20 -left-20 w-[400px] h-[400px] bg-teal-500/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-[#07080d] text-slate-900 dark:text-white flex flex-col justify-between relative overflow-hidden transition-colors duration-200">
+      {/* Ambient Cosmic Indigo & Violet Spotlight */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div
+          className="absolute -top-28 left-1/2 -translate-x-1/2 w-[850px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
+          style={{
+            background:
+              "radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)",
+          }}
+        />
+      </div>
 
       {/* Top Header */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform glow-emerald">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-center group-hover:scale-105 transition-transform shadow-[0_0_20px_rgba(99,102,241,0.35)]">
+            <div className="w-3.5 h-3.5 rounded-sm bg-gradient-to-tr from-indigo-500 via-violet-500 to-sky-400 rotate-45" />
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-bold text-base tracking-tight text-white dark:text-white light:text-zinc-950 font-mono">AutoHeal AI</span>
-            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/[0.05] dark:bg-white/[0.05] light:bg-zinc-100 text-zinc-400 dark:text-zinc-400 light:text-zinc-600 border border-white/10 dark:border-white/10 light:border-zinc-200 font-semibold">
-              v1.0
+            <span className="font-bold text-base tracking-tight text-slate-950 dark:text-white font-mono">
+              Reflex
+            </span>
+            <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 font-semibold">
+              v2.0
             </span>
           </div>
         </Link>
+
         <div className="flex items-center gap-3">
           <ThemeToggle />
           <Link
             href="/"
-            className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 hover:text-white dark:hover:text-white light:hover:text-zinc-950 transition-colors flex items-center gap-1.5 font-mono"
+            className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white transition-colors flex items-center gap-1.5 font-mono"
           >
-            Back to Overview
+            Back to Home
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </header>
 
-      {/* Main Auth Card (Apple Liquid Glass Elevated) */}
+      {/* Main Signup Card */}
       <main className="relative z-10 flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-md space-y-5">
           {errorMsg && (
-            <div className="p-3.5 rounded-2xl liquid-glass border-rose-500/40 text-rose-300 text-xs flex items-center gap-2.5 glow-crimson font-mono">
-              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <div className="p-3.5 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5 font-mono">
+              <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Confirmation Notice Screen */}
-          {confirmationNotice ? (
-            <div className="rounded-3xl liquid-glass-elevated p-8 sm:p-9 space-y-6 text-center animate-in fade-in duration-300">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto glow-emerald">
-                <MailCheck className="w-7 h-7" />
-              </div>
-
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold tracking-tight text-white dark:text-white light:text-zinc-950 font-mono">Check your email</h1>
-                <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 leading-relaxed max-w-sm mx-auto font-sans">
-                  We sent a confirmation link to{" "}
-                  <span className="text-white dark:text-white light:text-zinc-950 font-medium font-mono">{email}</span>. Click the link in your email to
-                  activate your account and access your dashboard.
-                </p>
-              </div>
-
-              <div className="pt-2 space-y-3 font-mono">
-                <Link
-                  href="/login"
-                  className="w-full h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs border border-emerald-500/30 glow-emerald transition-colors flex items-center justify-center gap-2"
-                >
-                  Proceed to Sign In
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={() => setConfirmationNotice(false)}
-                  className="text-xs text-zinc-400 hover:text-white dark:hover:text-white light:hover:text-zinc-950 transition-colors"
-                >
-                  Need to change your email? Go back
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Sign Up Card */
-            <div className="rounded-3xl liquid-glass-elevated p-8 sm:p-9 space-y-6">
-              {/* Title */}
-              <div className="space-y-2 text-center">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-xs font-mono font-medium text-emerald-400 glow-emerald">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Enterprise Reliability
-                </div>
-                <h1 className="text-2xl font-bold tracking-tight text-white dark:text-white light:text-zinc-950 font-mono">Create an Account</h1>
-                <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 leading-relaxed max-w-sm mx-auto font-sans">
-                  Get started with autonomous crash remediation, Docker sandbox verification, and AI PRs.
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="space-y-3">
-                {/* GitHub OAuth */}
-                <button
-                  type="button"
-                  onClick={handleGitHubSignUp}
-                  disabled={anyLoading}
-                  className="w-full h-11 px-4 rounded-xl bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
-                >
-                  {isGitHubLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
-                  ) : (
-                    <GitHubIcon className="w-5 h-5" />
-                  )}
-                  <span>Continue with GitHub</span>
-                </button>
-
-                {/* Divider */}
-                <div className="flex items-center gap-3 py-1">
-                  <div className="flex-1 h-px bg-white/10 dark:bg-white/10 light:border-zinc-200" />
-                  <span className="text-[11px] font-mono font-medium text-zinc-500 uppercase tracking-wider">or</span>
-                  <div className="flex-1 h-px bg-white/10 dark:bg-white/10 light:border-zinc-200" />
-                </div>
-
-                {/* Email / Password Sign Up Form */}
-                <form onSubmit={handleEmailSignUp} className="space-y-3">
-                  <div className="relative">
-                    <User className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Full Name (optional)"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="w-full h-10 pl-10 pr-3 rounded-xl bg-white/[0.04] dark:bg-white/[0.04] light:bg-zinc-100 border border-white/10 dark:border-white/10 light:border-zinc-300 text-sm text-white dark:text-white light:text-zinc-950 placeholder-zinc-500 backdrop-blur-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-all font-sans"
-                    />
-                  </div>
-
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@company.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full h-10 pl-10 pr-3 rounded-xl bg-white/[0.04] dark:bg-white/[0.04] light:bg-zinc-100 border border-white/10 dark:border-white/10 light:border-zinc-300 text-sm text-white dark:text-white light:text-zinc-950 placeholder-zinc-500 backdrop-blur-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-all font-sans"
-                    />
-                  </div>
-
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="password"
-                      required
-                      placeholder="Password (min. 8 characters)"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full h-10 pl-10 pr-3 rounded-xl bg-white/[0.04] dark:bg-white/[0.04] light:bg-zinc-100 border border-white/10 dark:border-white/10 light:border-zinc-300 text-sm text-white dark:text-white light:text-zinc-950 placeholder-zinc-500 backdrop-blur-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/60 transition-all font-sans"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={anyLoading}
-                    className="w-full h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs border border-emerald-500/30 glow-emerald transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
-                  >
-                    {isEmailLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-white" />
-                        <span>Creating Account...</span>
-                      </>
-                    ) : (
-                      <span>Create Account with Email</span>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* Footer / Links */}
-              <div className="text-center pt-2">
-                <p className="text-xs text-zinc-400 dark:text-zinc-400 light:text-zinc-600 font-sans">
-                  Already have an account?{" "}
-                  <Link
-                    href={`/login?from=${encodeURIComponent(from)}`}
-                    className="text-emerald-400 hover:underline font-mono font-medium"
-                  >
-                    Sign in
-                  </Link>
-                </p>
-              </div>
+          {successMsg && (
+            <div className="p-3.5 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2.5 font-mono">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <span>{successMsg}</span>
             </div>
           )}
+
+          <div className="rounded-3xl border border-slate-200/90 dark:border-white/10 bg-white/95 dark:bg-[#0b0d17]/95 backdrop-blur-2xl p-8 sm:p-9 shadow-[0_20px_60px_rgba(0,0,0,0.25)] space-y-6">
+            {/* Title */}
+            <div className="space-y-2 text-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/25 text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Enterprise Reliability
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white font-mono">
+                Create an Account
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                Get started with 5 free autonomous Reflexes/mo, Docker sandbox verification, and AI PRs.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-3.5">
+              {/* GitHub OAuth */}
+              <button
+                type="button"
+                onClick={handleGitHubSignup}
+                disabled={anyLoading}
+                className="w-full h-11 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 font-semibold text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2.5 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+              >
+                {isGitHubLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <GitHubIcon className="w-5 h-5" />
+                )}
+                <span>Continue with GitHub</span>
+              </button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 py-1">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
+                <span className="text-[11px] font-mono font-medium text-slate-400 uppercase tracking-wider">
+                  or
+                </span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-white/10" />
+              </div>
+
+              {/* Signup Form */}
+              <form onSubmit={handleEmailSignUp} className="space-y-3">
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Full Name (optional)"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-[#07080d] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-[#07080d] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="Password (min. 8 characters)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-[#07080d] border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={anyLoading}
+                  className="w-full h-11 px-4 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 text-white font-semibold text-xs border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.35)] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed font-mono"
+                >
+                  {isEmailLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Creating Account...</span>
+                    </>
+                  ) : (
+                    <span>Create Account with Email</span>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Footer / Links */}
+            <div className="text-center pt-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Already have an account?{" "}
+                <Link
+                  href={`/login?from=${encodeURIComponent(from)}`}
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline font-mono font-semibold"
+                >
+                  Sign in
+                </Link>
+              </p>
+            </div>
+          </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 w-full max-w-6xl mx-auto px-6 h-16 flex items-center justify-between text-xs text-zinc-500 font-mono">
-        <div>&copy; {new Date().getFullYear()} AutoHeal AI Systems Inc.</div>
+      <footer className="relative z-10 w-full max-w-6xl mx-auto px-6 h-16 flex items-center justify-between text-xs text-slate-500 font-mono">
+        <div>&copy; {new Date().getFullYear()} Reflex Inc.</div>
         <div className="flex gap-4">
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Terms</Link>
-          <Link href="/" className="hover:text-zinc-400 transition-colors">Security</Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Terms
+          </Link>
+          <Link href="/" className="hover:text-indigo-400 transition-colors">
+            Security
+          </Link>
         </div>
       </footer>
     </div>
   );
 }
 
-export default function SignUpPage() {
+export default function SignupPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500 font-mono text-xs">
-          Loading sign up...
+        <div className="min-h-screen bg-[#f8fafc] dark:bg-[#07080d] flex items-center justify-center text-slate-500 font-mono text-xs">
+          Loading signup...
         </div>
       }
     >
-      <SignUpContent />
+      <SignupContent />
     </Suspense>
   );
 }
