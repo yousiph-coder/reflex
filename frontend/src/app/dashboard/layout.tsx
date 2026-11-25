@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useTenant } from "@/context/TenantContext";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -16,15 +16,21 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { session, sessionToken, isAuthenticated, isLoading } = useTenant();
   const hasSession = Boolean(session || sessionToken || isAuthenticated);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !hasSession) {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted && !isLoading && !hasSession) {
       const from = encodeURIComponent(pathname || "/dashboard");
       router.replace(`/login?from=${from}`);
     }
-  }, [isLoading, hasSession, pathname, router]);
+  }, [mounted, isLoading, hasSession, pathname, router]);
 
-  if (isLoading) {
+  // Prevent browser-extension DOM mutations (e.g. bis_skin_checked) from triggering SSR hydration mismatches
+  if (!mounted || isLoading) {
     return (
       <div className="min-h-screen bg-[#f8fafc] dark:bg-[#07080d] flex flex-col items-center justify-center gap-4 select-none transition-colors duration-200">
         <div className="relative">
