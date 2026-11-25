@@ -49,7 +49,7 @@ class Repository(Base):
 
     # Execution overrides
     test_command: Mapped[str] = mapped_column(String(512), default="pytest -xvs tests/", nullable=False)
-    llm_model: Mapped[str] = mapped_column(String(64), default="gpt-4o", nullable=False)
+    llm_model: Mapped[str] = mapped_column(String(64), default="openai/gpt-oss-120b", nullable=False)
 
     # Metrics
     open_prs_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

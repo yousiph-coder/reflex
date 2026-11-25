@@ -296,7 +296,7 @@ class Incident(Base):
                     pr_url=str(pr_url),
                     pr_number=3 if "#3" in str(pr_url) or "/3" in str(pr_url) else 1,
                     branch_name=branch_name or "autoheal/fix",
-                    llm_model="gpt-4o",
+                    llm_model="openai/gpt-oss-120b",
                 )
             )
 

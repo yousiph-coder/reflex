@@ -409,6 +409,15 @@ Do NOT wrap the JSON in markdown code fences. Output raw JSON only.
             try:
                 start_time = time.monotonic()
 
+                settings = get_settings()
+                if "groq.com" in settings.llm_base_url.lower() and (
+                    not self._model
+                    or self._model.startswith("gpt-4")
+                    or self._model.startswith("o1")
+                    or self._model.startswith("o3")
+                ):
+                    self._model = settings.llm_model
+
                 request_body: dict[str, Any] = {
                     "model": self._model,
                     "messages": messages,

@@ -30,7 +30,7 @@ class RepositoryCreate(BaseModel):
     monorepo_path: Optional[str] = None
     remediation_mode: RemediationMode = RemediationMode.AUTONOMOUS
     test_command: str = "pytest -xvs tests/"
-    llm_model: str = "gpt-4o"
+    llm_model: str = "openai/gpt-oss-120b"
     sentry_mappings: List[SentryMappingCreate] = Field(default_factory=list)
 
 
@@ -57,7 +57,7 @@ class RepositoryResponse(BaseModel):
     remediation_mode: RemediationMode = RemediationMode.AUTONOMOUS
     is_active: bool = True
     test_command: str = "pytest -xvs tests/"
-    llm_model: str = "gpt-4o"
+    llm_model: str = "openai/gpt-oss-120b"
     open_prs_count: int = 0
     merged_prs_count: int = 0
     healed_prs_count: int = 0
