@@ -414,7 +414,16 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return await response.json();
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+
+    return JSON.parse(text) as T;
   } catch (error) {
     if (
       error instanceof Error &&
