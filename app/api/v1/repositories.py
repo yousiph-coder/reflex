@@ -52,6 +52,17 @@ def _extract_tenant_identifiers(tenant: Organization) -> tuple[str, uuid.UUID | 
     return str(tid) if tid is not None else "", None
 
 
+def _default_test_command(language: str | None) -> str:
+    lang = (language or "").strip().lower()
+    if lang in {"javascript", "typescript", "js", "ts", "node", "nodejs"}:
+        return "npm test"
+    if lang in {"go", "golang"}:
+        return "go test ./..."
+    if lang == "rust":
+        return "cargo test"
+    return "pytest -xvs tests/"
+
+
 async def _attach_computed_repo_metrics(
     repos: list[Repository],
     tenant: Organization,
@@ -316,11 +327,20 @@ async def sync_repositories(
         res = await session.execute(stmt)
         existing = res.scalars().first()
 
+        inferred_test_cmd = _default_test_command(language)
         if existing:
             existing.default_branch = default_branch
             existing.language = language
             existing.is_private = is_private
             existing.is_active = True
+            if (
+                not existing.test_command
+                or (
+                    existing.test_command.strip() == "pytest -xvs tests/"
+                    and inferred_test_cmd != "pytest -xvs tests/"
+                )
+            ):
+                existing.test_command = inferred_test_cmd
             if github_repo_id and hasattr(existing, "github_repo_id"):
                 existing.github_repo_id = github_repo_id
             synced_repos.append(existing)
@@ -333,6 +353,7 @@ async def sync_repositories(
                 language=language,
                 is_private=is_private,
                 is_active=True,
+                test_command=inferred_test_cmd,
                 remediation_mode=RemediationMode.AUTONOMOUS,
             )
             if github_repo_id and hasattr(new_repo, "github_repo_id"):
