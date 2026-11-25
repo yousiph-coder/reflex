@@ -116,11 +116,11 @@ class Settings(BaseSettings):
     # ── LLM Provider ────────────────────────────────────────────
     llm_api_key: SecretStr = Field(..., description="API key for the LLM provider")
     llm_model: str = Field(
-        default="gpt-4o",
+        default="openai/gpt-oss-120b",
         description="Default LLM model identifier",
     )
     llm_base_url: str = Field(
-        default="https://api.openai.com/v1",
+        default="https://api.groq.com/openai/v1",
         description="LLM API base URL (supports OpenAI-compatible providers)",
     )
     llm_max_tokens: int = Field(default=4096, ge=256, description="Max response tokens")
