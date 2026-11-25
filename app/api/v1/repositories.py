@@ -255,7 +255,7 @@ async def sync_repositories(
     elif hasattr(tenant, "github_installation_id"):
         tenant.github_installation_id = installation_id
 
-    # 2. Use github_app service to fetch accessible repositories for this installation
+    # 2. Use github_app service to fetch strictly selected installation repositories
     try:
         repos_res = get_installation_repositories(installation_id)
         if inspect.isawaitable(repos_res):
@@ -263,12 +263,15 @@ async def sync_repositories(
         else:
             fetched_repos = repos_res
     except Exception as exc:
-        logger.warning(
-            "Resilient repository listing encountered issue for installation %s: %s",
+        logger.error(
+            "GitHub App repository sync failed for installation %s: %s",
             installation_id,
             exc,
         )
-        fetched_repos = []
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"GitHub App sync failed for installation #{installation_id}: {exc}",
+        )
 
     # 3. Upsert fetched repositories into repositories table scoped to tenant.id
     synced_repos: list[Repository] = []

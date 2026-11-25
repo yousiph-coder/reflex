@@ -172,24 +172,16 @@ async def get_installation_access_token(
                 except Exception:
                     formatted = error_details
 
-                logger.warning(
-                    "GitHub API token exchange failed for installation %s (HTTP %d): %s",
+                logger.error(
+                    "GitHub App token exchange failed for installation %s (HTTP %d): %s",
                     installation_id,
                     resp.status_code,
                     formatted,
                 )
-                settings = get_settings()
-                gh_token = (
-                    settings.github_token.get_secret_value()
-                    if getattr(settings, "github_token", None)
-                    else os.environ.get("GITHUB_TOKEN")
+                raise RuntimeError(
+                    f"GitHub App token exchange failed (HTTP {resp.status_code}): {formatted}"
                 )
-                if gh_token:
-                    logger.info("Using configured GITHUB_TOKEN fallback for installation %s", installation_id)
-                    _INSTALLATION_TOKENS[installation_id] = (gh_token, now + 3600)
-                    return gh_token
 
-            resp.raise_for_status()
             data = resp.json()
             token = data["token"]
             _INSTALLATION_TOKENS[installation_id] = (token, now + 3300)
@@ -201,16 +193,11 @@ async def get_installation_access_token(
             async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as local_client:
                 return await _do_request(local_client)
     except Exception as exc:
-        settings = get_settings()
-        gh_token = (
-            settings.github_token.get_secret_value()
-            if getattr(settings, "github_token", None)
-            else os.environ.get("GITHUB_TOKEN")
+        logger.error(
+            "GitHub App installation token error for installation %s: %s",
+            installation_id,
+            exc,
         )
-        if gh_token:
-            logger.info("Using configured GITHUB_TOKEN fallback for installation %s after error: %s", installation_id, exc)
-            _INSTALLATION_TOKENS[installation_id] = (gh_token, now + 3600)
-            return gh_token
         raise
 
 
@@ -291,103 +278,53 @@ async def _async_get_installation_repositories(
     client: httpx.AsyncClient | None = None,
     installation_token: str | None = None,
 ) -> list[dict[str, Any]]:
-    # 1. Obtain token or call get_installation_access_token
-    token = None
+    # 1. Obtain genuine GitHub App installation access token (no personal token fallback)
     if installation_token:
         token = installation_token
     else:
-        try:
-            token_coro = get_installation_access_token(installation_id, client=client)
-            if inspect.isawaitable(token_coro):
-                token = await token_coro
-            else:
-                token = token_coro
-        except Exception as exc:
-            logger.warning(
-                "GitHub App access token exchange failed for installation %s: %s",
+        token_coro = get_installation_access_token(installation_id, client=client)
+        token = await token_coro if inspect.isawaitable(token_coro) else token_coro
+
+    # 2. Strictly fetch ONLY repositories selected in this GitHub App installation
+    url = f"{_GITHUB_API}/installation/repositories?per_page=100"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": _ACCEPT_JSON,
+        "X-GitHub-Api-Version": _API_VERSION,
+    }
+
+    async def _do_request(c: httpx.AsyncClient) -> list[dict[str, Any]]:
+        resp = await c.get(url, headers=headers)
+        if resp.status_code >= 400:
+            error_details = resp.text
+            try:
+                err_data = resp.json()
+                msg = err_data.get("message", error_details)
+                doc = err_data.get("documentation_url")
+                formatted = f"{msg} (doc: {doc})" if doc else msg
+            except Exception:
+                formatted = error_details
+            logger.error(
+                "GitHub App repository listing failed for installation %s (HTTP %d): %s",
                 installation_id,
-                exc,
+                resp.status_code,
+                formatted,
+            )
+            raise RuntimeError(
+                f"GitHub App repository listing failed (HTTP {resp.status_code}): {formatted}"
             )
 
-    # 2. If token is available, attempt GET /installation/repositories
-    if token:
-        url = f"{_GITHUB_API}/installation/repositories"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": _ACCEPT_JSON,
-            "X-GitHub-Api-Version": _API_VERSION,
-        }
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get("repositories", [])
+        elif isinstance(data, list):
+            return data
+        return []
 
-        async def _do_request(c: httpx.AsyncClient) -> list[dict[str, Any]]:
-            resp = await c.get(url, headers=headers)
-            if resp.status_code >= 400:
-                error_details = resp.text
-                try:
-                    err_data = resp.json()
-                    msg = err_data.get("message", error_details)
-                    doc = err_data.get("documentation_url")
-                    formatted = f"{msg} (doc: {doc})" if doc else msg
-                except Exception:
-                    formatted = error_details
-                logger.error(
-                    "GitHub API repository listing failed for installation %s (HTTP %d): %s | Response headers: %s",
-                    installation_id,
-                    resp.status_code,
-                    formatted,
-                    dict(resp.headers),
-                )
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, dict):
-                return data.get("repositories", [])
-            elif isinstance(data, list):
-                return data
-            return []
-
-        try:
-            if client is not None:
-                return await _do_request(client)
-            else:
-                async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as local_client:
-                    return await _do_request(local_client)
-        except Exception as exc:
-            logger.warning(
-                "GitHub App repository listing failed for installation %s: %s",
-                installation_id,
-                exc,
-            )
-
-    # 3. Fallback: If GitHub App token exchange or listing was not successful,
-    # try user token if configured in settings / environment
-    try:
-        settings = get_settings()
-        gh_token = (
-            settings.github_token.get_secret_value()
-            if getattr(settings, "github_token", None)
-            else os.environ.get("GITHUB_TOKEN")
-        )
-        if gh_token:
-            fallback_headers = {
-                "Authorization": f"token {gh_token}",
-                "Accept": _ACCEPT_JSON,
-                "X-GitHub-Api-Version": _API_VERSION,
-            }
-            fallback_url = f"{_GITHUB_API}/user/repos"
-            if client is not None:
-                f_resp = await client.get(fallback_url, headers=fallback_headers)
-            else:
-                async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as local_c:
-                    f_resp = await local_c.get(fallback_url, headers=fallback_headers)
-            if f_resp.status_code < 400:
-                f_data = f_resp.json()
-                if isinstance(f_data, list):
-                    return f_data
-                elif isinstance(f_data, dict):
-                    return f_data.get("repositories", [])
-    except Exception as fallback_exc:
-        logger.warning("Fallback repository fetch failed: %s", fallback_exc)
-
-    return []
+    if client is not None:
+        return await _do_request(client)
+    async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as local_client:
+        return await _do_request(local_client)
 
 
 def get_installation_repositories(
