@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
-  Sparkles,
   Clock,
   DollarSign,
   HeartPulse,
@@ -16,162 +16,175 @@ import {
   Activity,
   Check,
   Crown,
-} from 'lucide-react';
-
-// ============================================================================
-// REFLEX DASHBOARD PAGE — AMBIENT BACKDROP GLOW + REFINED ACTIVE CARD
-// File path in VS Code: src/app/dashboard/page.tsx
-// ============================================================================
-
-interface ReflexIncident {
-  id: string;
-  title: string;
-  file: string;
-  line: number;
-  repo: string;
-  mttr: string;
-  timeAgo: string;
-  prNumber: number;
-  prUrl: string;
-  confidence: string;
-  blastRadius: string;
-  testsPassed: string;
-  status: 'merged' | 'ready';
-  brokenCode: string;
-  healedCode: string;
-  summary: string;
-}
-
-const INCIDENTS_DATA: ReflexIncident[] = [
-  {
-    id: '745a7b31',
-    title: "TypeError: Cannot read properties of undefined (reading 'length')",
-    file: 'src/counter.js',
-    line: 42,
-    repo: 'yousiph-coder/reflex',
-    mttr: '38 sec',
-    timeAgo: 'Just now',
-    prNumber: 3,
-    prUrl: 'https://github.com/yousiph-coder/reflex/pull/3',
-    confidence: '99.2%',
-    blastRadius: 'Low (1 file isolated)',
-    testsPassed: '14 / 14 passed',
-    status: 'merged',
-    brokenCode: `export function getCount(items) {\n- return items.length;\n}`,
-    healedCode: `export function getCount(items) {\n+ if (!Array.isArray(items)) return 0;\n+ return items.length;\n}`,
-    summary:
-      'Added safe array guard before accessing .length to prevent undefined payload crashes.',
-  },
-  {
-    id: '92bc10f4',
-    title: 'KeyError: Missing tenant_id in webhook header payload',
-    file: 'api/webhooks/sentry.py',
-    line: 88,
-    repo: 'yousiph-coder/reflex',
-    mttr: '41 sec',
-    timeAgo: '2 hours ago',
-    prNumber: 2,
-    prUrl: 'https://github.com/yousiph-coder/reflex/pull/2',
-    confidence: '98.7%',
-    blastRadius: 'Low (1 endpoint)',
-    testsPassed: '22 / 22 passed',
-    status: 'merged',
-    brokenCode: `tenant_id = payload["organization"]["id"]`,
-    healedCode: `tenant_id = payload.get("organization", {}).get("id", "default")`,
-    summary:
-      'Replaced direct dictionary lookup with safe .get() fallback for webhook events.',
-  },
-  {
-    id: '31fa89e2',
-    title: 'Hydration Mismatch: Async timestamp rendered on client',
-    file: 'src/components/TelemetryBadge.tsx',
-    line: 19,
-    repo: 'yousiph-coder/reflex',
-    mttr: '34 sec',
-    timeAgo: 'Yesterday',
-    prNumber: 1,
-    prUrl: 'https://github.com/yousiph-coder/reflex/pull/1',
-    confidence: '99.5%',
-    blastRadius: 'Minimal (UI component)',
-    testsPassed: '9 / 9 passed',
-    status: 'ready',
-    brokenCode: `<span>{new Date().toLocaleTimeString()}</span>`,
-    healedCode: `<span suppressHydrationWarning>{mounted ? time : "--:--"}</span>`,
-    summary:
-      'Deferred dynamic timestamp rendering until client mount to eliminate Next.js hydration errors.',
-  },
-];
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { IncidentDetail, IncidentSummary } from "@/lib/types";
+import { useTenant } from "@/context/TenantContext";
 
 export default function ReflexDashboardPage() {
-  const [selectedId, setSelectedId] = useState<string>('745a7b31');
+  const { currentOrg, billingUsage, openUpgradeModal } = useTenant();
+
+  const [overview, setOverview] = useState<any>(null);
+  const [incidents, setIncidents] = useState<IncidentSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<IncidentDetail | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
-  const selectedIncident =
-    INCIDENTS_DATA.find((item) => item.id === selectedId) || INCIDENTS_DATA[0];
-
-  const triggerToast = (msg: string) => {
+  const triggerToast = useCallback((msg: string) => {
     setActionToast(msg);
     setTimeout(() => setActionToast(null), 3200);
-  };
+  }, []);
+
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [overviewRes, incidentsRes] = await Promise.allSettled([
+        apiClient.getOverviewMetrics(),
+        apiClient.getIncidents({ pageSize: 10 }),
+      ]);
+
+      if (overviewRes.status === "fulfilled") {
+        setOverview(overviewRes.value);
+      }
+
+      if (incidentsRes.status === "fulfilled") {
+        const items = incidentsRes.value?.items || [];
+        setIncidents(items);
+        if (items.length > 0) {
+          setSelectedId((prev) => prev || items[0].id);
+        } else {
+          setSelectedId(null);
+          setSelectedDetail(null);
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedDetail(null);
+      return;
+    }
+    let active = true;
+    setIsDetailLoading(true);
+    apiClient
+      .getIncident(selectedId)
+      .then((detail) => {
+        if (active) setSelectedDetail(detail);
+      })
+      .catch(() => {
+        if (active) setSelectedDetail(null);
+      })
+      .finally(() => {
+        if (active) setIsDetailLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedId]);
+
+  const healsUsed = billingUsage?.heals_used ?? overview?.resolved_incidents ?? 0;
+  const maxLimit = billingUsage?.limit ?? 5;
+  const activePlan = (billingUsage?.plan || currentOrg?.plan || "free").toUpperCase();
+  const usagePct = Math.min(100, Math.round((healsUsed / Math.max(1, maxLimit)) * 100));
+
+  const resolvedCount =
+    overview?.resolved_incidents ??
+    incidents.filter((i) => i.status === "RESOLVED").length;
+
+  const avgMttrSeconds = overview?.avg_mttr_seconds ?? 0;
+  const mttrDisplay =
+    avgMttrSeconds > 0 ? `${Math.round(avgMttrSeconds)} sec` : "—";
+
+  const hoursSaved = (resolvedCount * 2.5).toFixed(1);
+  const dollarsSaved = (resolvedCount * 162.5).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const roiMultiple =
+    resolvedCount > 0 ? ((resolvedCount * 162.5) / 29).toFixed(1) : "0.0";
+
+  const openCrashes = incidents.filter(
+    (i) => i.status !== "RESOLVED" && i.status !== "REJECTED"
+  ).length;
+  const vitalityDisplay =
+    openCrashes === 0 ? "100%" : `${Math.max(50, 100 - openCrashes * 5)}%`;
 
   const kpiCards = [
     {
-      title: 'Reflexes Used',
-      value: '3 / 5',
-      badge: 'Free Plan',
-      subtext: '2 free autonomous fixes remaining this month',
+      title: "Reflexes Used",
+      value: activePlan === "PRO" ? `${healsUsed} / ∞` : `${healsUsed} / ${maxLimit}`,
+      badge: `${activePlan} Plan`,
+      subtext:
+        activePlan === "PRO"
+          ? "Unlimited autonomous fixes active"
+          : `${Math.max(0, maxLimit - healsUsed)} free fixes remaining this month`,
       icon: Zap,
-      accent: 'text-indigo-600 dark:text-indigo-400',
-      iconBg: 'bg-indigo-500/10',
+      accent: "text-indigo-600 dark:text-indigo-400",
+      iconBg: "bg-indigo-500/10",
     },
     {
-      title: 'Avg Resolution Time',
-      value: '38 sec',
-      badge: 'Fast MTTR',
-      subtext: 'From Sentry crash to verified GitHub PR',
+      title: "Avg Resolution Time",
+      value: mttrDisplay,
+      badge: "Live MTTR",
+      subtext: "From Sentry crash to verified GitHub PR",
       icon: Clock,
-      accent: 'text-sky-600 dark:text-sky-400',
-      iconBg: 'bg-sky-500/10',
+      accent: "text-sky-600 dark:text-sky-400",
+      iconBg: "bg-sky-500/10",
     },
     {
-      title: 'Engineering Saved',
-      value: '$487.50',
-      badge: '5.6x ROI',
-      subtext: '7.5 senior engineering hours saved @ $65/hr',
+      title: "Engineering Saved",
+      value: `$${dollarsSaved}`,
+      badge: `${roiMultiple}x ROI`,
+      subtext: `${hoursSaved} senior engineering hours saved @ $65/hr`,
       icon: DollarSign,
-      accent: 'text-violet-600 dark:text-violet-400',
-      iconBg: 'bg-violet-500/10',
+      accent: "text-violet-600 dark:text-violet-400",
+      iconBg: "bg-violet-500/10",
     },
     {
-      title: 'System Vitality',
-      value: '99.8%',
-      badge: 'Healthy',
-      subtext: 'yousiph-coder/reflex · 0 active crashes',
+      title: "System Vitality",
+      value: vitalityDisplay,
+      badge: openCrashes === 0 ? "Healthy" : `${openCrashes} Open`,
+      subtext: `${currentOrg?.name || "Reflex Workspace"} · Live telemetry`,
       icon: HeartPulse,
-      accent: 'text-emerald-600 dark:text-emerald-400',
-      iconBg: 'bg-emerald-500/10',
+      accent: "text-emerald-600 dark:text-emerald-400",
+      iconBg: "bg-emerald-500/10",
     },
   ];
 
+  const latestAttempt = selectedDetail?.remediation_attempts?.[0];
+
+  const handleRerunSandbox = async () => {
+    if (!selectedDetail) return;
+    try {
+      triggerToast(`Re-running Docker Sandbox for #${selectedDetail.id.slice(0, 8)}...`);
+      await apiClient.rerunSandbox(selectedDetail.id);
+      triggerToast("Docker Sandbox verification completed!");
+      loadDashboardData();
+    } catch {
+      triggerToast("Failed to trigger sandbox rerun. Check backend connection.");
+    }
+  };
+
   return (
     <div className="relative w-full text-slate-900 dark:text-white space-y-8 pb-14">
-      {/* =================================================================== */}
-      {/* RESTORED AMBIENT BACKGROUND SPOTLIGHT GLOW & SUBTLE DOT MATRIX       */}
-      {/* =================================================================== */}
+      {/* Ambient Background Spotlight Glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
-        {/* Top Cosmic Indigo & Violet Spotlight */}
         <div
           className="absolute -top-24 left-1/2 -translate-x-1/2 w-[960px] h-[420px] rounded-full blur-[140px] opacity-25 dark:opacity-35"
           style={{
             background:
-              'radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)',
-          }}
-        />
-        {/* Secondary Right Studio Glow */}
-        <div
-          className="absolute top-1/3 right-0 w-[520px] h-[420px] rounded-full blur-[150px] opacity-15 dark:opacity-20"
-          style={{
-            background: 'radial-gradient(circle, #8b5cf6 0%, transparent 75%)',
+              "radial-gradient(circle, #6366f1 0%, #8b5cf6 45%, #38bdf8 85%, transparent 100%)",
           }}
         />
       </div>
@@ -179,27 +192,35 @@ export default function ReflexDashboardPage() {
       {/* Top Section Header */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-white/10">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium bg-indigo-500/10 border-indigo-500/25 text-indigo-600 dark:text-indigo-400 mb-2">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Autonomous Agent Active · Listening to Sentry Webhooks</span>
-          </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
             Mission Control
           </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+            Live PostgreSQL telemetry · {incidents.length} recorded incidents
+          </p>
         </div>
 
-        <button
-          onClick={() =>
-            triggerToast('GitHub App connected to yousiph-coder/reflex!')
-          }
-          className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.3)] flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Connect Repo</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={loadDashboardData}
+            className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.04] hover:border-indigo-500/40 text-slate-600 dark:text-slate-300 transition-all"
+            title="Refresh live data"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin text-indigo-500" : ""}`} />
+          </button>
+
+          <Link
+            href="/dashboard/repositories"
+            className="px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 transition-all shadow-[0_4px_20px_rgba(99,102,241,0.3)] flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Connect Repo</span>
+          </Link>
+        </div>
       </div>
 
-      {/* 1. 4 CLEAN KPI CARDS */}
+      {/* 1. 4 LIVE KPI CARDS */}
       <section className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {kpiCards.map((card, idx) => {
           const Icon = card.icon;
@@ -237,246 +258,266 @@ export default function ReflexDashboardPage() {
       </section>
 
       {/* 2. LIVE REFLEX STUDIO (TIMELINE STREAM + INSTANT X-RAY) */}
-      <section className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT 5 COLUMNS: THE HEALING STREAM (Clean Sleek Active State!) */}
-        <div className="lg:col-span-5 space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
-                Live Reflex Stream
-              </h2>
-            </div>
-            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-              Click to inspect
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {INCIDENTS_DATA.map((item) => {
-              const isSelected = item.id === selectedIncident.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setSelectedId(item.id)}
-                  className={`relative overflow-hidden w-full text-left rounded-2xl border p-4 transition-all duration-200 ${
-                    isSelected
-                      ? 'bg-white dark:bg-[#111526] border-indigo-500/70 dark:border-indigo-500/60 shadow-[0_8px_28px_rgba(99,102,241,0.14)]'
-                      : 'bg-white/75 dark:bg-[#0b0d17]/75 border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 opacity-80 hover:opacity-100'
-                  }`}
-                >
-                  {/* Sleek Left Accent Indicator Bar when Selected (Instead of muddy glow) */}
-                  {isSelected && (
-                    <span className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-400 via-violet-500 to-sky-400" />
-                  )}
-
-                  <div className="flex items-center justify-between gap-2 pl-1">
-                    <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                      {item.file}:{item.line}
-                    </span>
-                    <span
-                      className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                        item.status === 'merged'
-                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
-                          : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30'
-                      }`}
-                    >
-                      {item.status === 'merged'
-                        ? `PR #${item.prNumber} MERGED`
-                        : `PR #${item.prNumber} READY`}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 pl-1 text-xs sm:text-sm font-semibold line-clamp-1 text-slate-900 dark:text-white">
-                    {item.title}
-                  </p>
-
-                  <div className="mt-3 pl-1 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                    <span>⚡ Healed in {item.mttr}</span>
-                    <span>{item.timeAgo}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+      {isLoading ? (
+        <div className="relative z-10 py-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-mono text-xs">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          <span>Loading live incidents from PostgreSQL...</span>
         </div>
-
-        {/* RIGHT 7 COLUMNS: INSTANT X-RAY INSPECTOR STUDIO */}
-        <div className="lg:col-span-7 rounded-3xl border p-6 bg-white/95 dark:bg-[#0b0d17]/90 backdrop-blur-xl border-slate-200/90 dark:border-white/10 shadow-xl transition-all">
-          <div className="flex flex-wrap items-start justify-between gap-4 pb-5 border-b border-slate-200 dark:border-white/10">
-            <div>
+      ) : incidents.length === 0 ? (
+        <div className="relative z-10 rounded-3xl border border-dashed border-slate-300 dark:border-white/15 bg-white/60 dark:bg-[#0b0d17]/60 p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 mx-auto">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">
+            All Systems Healthy — 0 Active Crashes
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Reflex is actively listening for Sentry webhooks. Once a production exception occurs, it will appear here automatically with its verified Docker patch.
+          </p>
+        </div>
+      ) : (
+        <section className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* LEFT 5 COLUMNS: LIVE HEALING STREAM */}
+          <div className="lg:col-span-5 space-y-3">
+            <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30 font-semibold">
-                  INCIDENT #{selectedIncident.id}
-                </span>
-                <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {selectedIncident.testsPassed}
-                </span>
+                <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">
+                  Live Reflex Stream
+                </h2>
               </div>
-              <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-950 dark:text-white">
-                {selectedIncident.title}
-              </h3>
-            </div>
-
-            <a
-              href={selectedIncident.prUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 flex items-center gap-1.5 shadow-[0_4px_16px_rgba(99,102,241,0.3)]"
-            >
-              <GitPullRequest className="w-3.5 h-3.5" />
-              <span>View PR #{selectedIncident.prNumber}</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 my-5">
-            <div className="rounded-xl border p-3 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
-              <div className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">
-                AI Confidence
-              </div>
-              <div className="mt-1 font-mono text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                {selectedIncident.confidence}
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-3 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
-              <div className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">
-                Blast Radius
-              </div>
-              <div className="mt-1 font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                {selectedIncident.blastRadius}
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-3 bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/10">
-              <div className="text-[10px] font-mono uppercase text-slate-500 dark:text-slate-400">
-                Resolution Speed
-              </div>
-              <div className="mt-1 font-mono text-sm font-bold text-sky-600 dark:text-sky-400">
-                {selectedIncident.mttr}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 font-mono text-xs">
-            <div className="rounded-xl bg-[#07080d] border border-rose-500/30 p-3.5 text-rose-300">
-              <div className="text-[10px] text-rose-400 uppercase mb-1">
-                - Before Crash ({selectedIncident.file})
-              </div>
-              <pre className="overflow-x-auto">
-                <code>{selectedIncident.brokenCode}</code>
-              </pre>
-            </div>
-
-            <div className="rounded-xl bg-[#07080d] border border-emerald-500/35 p-3.5 text-emerald-300">
-              <div className="text-[10px] text-emerald-400 uppercase mb-1">
-                + After Reflex Patch (Verified in Docker)
-              </div>
-              <pre className="overflow-x-auto">
-                <code>{selectedIncident.healedCode}</code>
-              </pre>
-            </div>
-          </div>
-
-          <div className="mt-5 pt-4 border-t border-slate-200 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              {selectedIncident.summary}
-            </p>
-
-            <button
-              onClick={() =>
-                triggerToast(
-                  `Instant Rollback Shield Ready for PR #${selectedIncident.prNumber}`
-                )
-              }
-              className="px-3 py-1.5 rounded-xl font-mono text-xs border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Instant Rollback</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* 3. QUOTA METER & IN-APP PRO UPGRADE BANNER ($29/MO) */}
-      <section className="relative z-10 rounded-3xl border p-6 sm:p-8 bg-gradient-to-r from-indigo-50 via-white to-violet-50 dark:from-indigo-950/35 dark:via-[#0b0d17] dark:to-violet-950/25 border-indigo-200 dark:border-indigo-500/35 shadow-lg">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-7 space-y-4">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30">
-                <Crown className="w-3.5 h-3.5" />
-                REFLEX PRO · $29/MO
-              </span>
-              <span className="font-mono text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
-                You already saved $487.50 this month (16.8x ROI)
+              <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                Click to inspect
               </span>
             </div>
 
-            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
-              You have used 3 of your 5 free monthly Reflexes.
-            </h3>
+            <div className="space-y-3">
+              {incidents.map((item) => {
+                const isSelected = item.id === selectedId;
+                const isResolved = item.status === "RESOLVED";
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedId(item.id)}
+                    className={`relative overflow-hidden w-full text-left rounded-2xl border p-4 transition-all duration-200 ${
+                      isSelected
+                        ? "bg-white dark:bg-[#111526] border-indigo-500/70 dark:border-indigo-500/60 shadow-[0_8px_28px_rgba(99,102,241,0.14)]"
+                        : "bg-white/75 dark:bg-[#0b0d17]/75 border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 opacity-85 hover:opacity-100"
+                    }`}
+                  >
+                    {isSelected && (
+                      <span className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-400 via-violet-500 to-sky-400" />
+                    )}
 
-            <div className="space-y-2 max-w-lg">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-slate-600 dark:text-slate-300">
-                  Monthly Free Quota
-                </span>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold">
-                  60% used (2 left)
-                </span>
-              </div>
-              <div className="w-full h-2.5 rounded-full overflow-hidden bg-slate-200 dark:bg-white/10">
-                <div className="h-full w-[60%] rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-400" />
-              </div>
+                    <div className="flex items-center justify-between gap-2 pl-1">
+                      <span className="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-400 truncate">
+                        {item.file_path || item.project_slug}
+                        {item.line_number ? `:${item.line_number}` : ""}
+                      </span>
+                      <span
+                        className={`font-mono text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${
+                          isResolved
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30"
+                            : "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 pl-1 text-xs sm:text-sm font-semibold line-clamp-1 text-slate-900 dark:text-white">
+                      {item.title}
+                    </p>
+
+                    <div className="mt-3 pl-1 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                      <span>{item.error_type || "Exception"}</span>
+                      <span>
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            <div className="pt-1 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
-              {[
-                'Unlimited autonomous Reflexes',
-                'Priority Docker sandbox runner',
-                'Instant Slack & Discord alerts',
-              ].map((perk, i) => (
-                <span key={i} className="flex items-center gap-1.5">
-                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="text-slate-700 dark:text-slate-300">
-                    {perk}
+          {/* RIGHT 7 COLUMNS: LIVE INSTANT X-RAY STUDIO */}
+          <div className="lg:col-span-7 rounded-3xl border p-6 bg-white/95 dark:bg-[#0b0d17]/90 backdrop-blur-xl border-slate-200/90 dark:border-white/10 shadow-xl transition-all">
+            {isDetailLoading || !selectedDetail ? (
+              <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-mono text-xs">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                <span>Loading live incident X-Ray...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-4 pb-5 border-b border-slate-200 dark:border-white/10">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30 font-semibold">
+                        INCIDENT #{selectedDetail.id.slice(0, 8)}
+                      </span>
+                      <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {selectedDetail.status}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-950 dark:text-white">
+                      {selectedDetail.title}
+                    </h3>
+                  </div>
+
+                  {latestAttempt?.pr_url ? (
+                    <a
+                      href={latestAttempt.pr_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3.5 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 flex items-center gap-1.5 shadow-[0_4px_16px_rgba(99,102,241,0.3)]"
+                    >
+                      <GitPullRequest className="w-3.5 h-3.5" />
+                      <span>
+                        View PR {latestAttempt.pr_number ? `#${latestAttempt.pr_number}` : ""}
+                      </span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <Link
+                      href={`/dashboard/incidents/${selectedDetail.id}`}
+                      className="px-3.5 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-600 flex items-center gap-1.5"
+                    >
+                      <span>Full Inspector</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  )}
+                </div>
+
+                {/* Live Diff or Stack Trace */}
+                <div className="my-5 space-y-3 font-mono text-xs">
+                  {latestAttempt?.diff ? (
+                    <div className="rounded-xl bg-[#07080d] border border-emerald-500/35 p-4 text-emerald-300">
+                      <div className="text-[10px] text-emerald-400 uppercase mb-2">
+                        Verified Reflex Patch ({selectedDetail.file_path})
+                      </div>
+                      <pre className="overflow-x-auto max-h-64">
+                        <code>{latestAttempt.diff}</code>
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-[#07080d] border border-rose-500/30 p-4 text-rose-300">
+                      <div className="text-[10px] text-rose-400 uppercase mb-2">
+                        Sentry Stack Trace ({selectedDetail.file_path})
+                      </div>
+                      <pre className="overflow-x-auto max-h-64">
+                        <code>{selectedDetail.stack_trace || selectedDetail.error_message}</code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 pt-4 border-t border-slate-200 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
+                  <Link
+                    href={`/dashboard/incidents/${selectedDetail.id}`}
+                    className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    Open Full X-Ray Inspector →
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={handleRerunSandbox}
+                    className="px-3 py-1.5 rounded-xl font-mono text-xs border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center gap-1.5 transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Re-run Sandbox</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 3. LIVE QUOTA METER & IN-APP PRO UPGRADE BANNER */}
+      {activePlan !== "PRO" && (
+        <section className="relative z-10 rounded-3xl border p-6 sm:p-8 bg-gradient-to-r from-indigo-50 via-white to-violet-50 dark:from-indigo-950/35 dark:via-[#0b0d17] dark:to-violet-950/25 border-indigo-200 dark:border-indigo-500/35 shadow-lg">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="lg:col-span-7 space-y-4">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border border-indigo-500/30">
+                  <Crown className="w-3.5 h-3.5" />
+                  REFLEX PRO · $29/MO
+                </span>
+                {resolvedCount > 0 && (
+                  <span className="font-mono text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                    You already saved ${dollarsSaved} ({roiMultiple}x ROI)
                   </span>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="lg:col-span-5 flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end justify-between gap-4">
-            <div className="lg:text-right">
-              <div className="flex items-baseline lg:justify-end gap-1.5">
-                <span className="font-mono text-4xl font-extrabold text-slate-950 dark:text-white">
-                  $29
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  / month · Cancel anytime
-                </span>
+                )}
               </div>
-              <p className="text-xs mt-1 text-slate-500 dark:text-slate-400">
-                Unlock unlimited zero-pager protection across all repos
-              </p>
+
+              <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+                You have used {healsUsed} of your {maxLimit} free monthly Reflexes.
+              </h3>
+
+              <div className="space-y-2 max-w-lg">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Monthly Free Quota
+                  </span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                    {usagePct}% used ({Math.max(0, maxLimit - healsUsed)} left)
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full overflow-hidden bg-slate-200 dark:bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-400 transition-all duration-500"
+                    style={{ width: `${usagePct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-1 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                {[
+                  "Unlimited autonomous Reflexes",
+                  "Priority Docker sandbox runner",
+                  "Instant Slack & Discord alerts",
+                ].map((perk, i) => (
+                  <span key={i} className="flex items-center gap-1.5">
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300">
+                      {perk}
+                    </span>
+                  </span>
+                ))}
+              </div>
             </div>
 
-            <button
-              onClick={() =>
-                triggerToast(
-                  'Redirecting to Reflex Pro Checkout ($29/mo — Unlimited Reflexes)...'
-                )
-              }
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 transition-all shadow-[0_4px_24px_rgba(99,102,241,0.35)] flex items-center justify-center gap-2"
-            >
-              <Zap className="w-4 h-4" />
-              <span>Upgrade to Pro — $29/mo</span>
-            </button>
+            <div className="lg:col-span-5 flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end justify-between gap-4">
+              <div className="lg:text-right">
+                <div className="flex items-baseline lg:justify-end gap-1.5">
+                  <span className="font-mono text-4xl font-extrabold text-slate-950 dark:text-white">
+                    $29
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    / month · Cancel anytime
+                  </span>
+                </div>
+                <p className="text-xs mt-1 text-slate-500 dark:text-slate-400">
+                  Unlock unlimited zero-pager protection across all repos
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={openUpgradeModal}
+                className="w-full sm:w-auto px-6 py-3.5 rounded-2xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 transition-all shadow-[0_4px_24px_rgba(99,102,241,0.35)] flex items-center justify-center gap-2"
+              >
+                <Zap className="w-4 h-4" />
+                <span>Upgrade to Pro — $29/mo</span>
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Toast Feedback */}
       {actionToast && (
