@@ -98,9 +98,18 @@ export default function ReflexDashboardPage() {
   const activePlan = (billingUsage?.plan || currentOrg?.plan || "free").toUpperCase();
   const usagePct = Math.min(100, Math.round((healsUsed / Math.max(1, maxLimit)) * 100));
 
-  const resolvedCount =
-    overview?.resolved_incidents ??
-    incidents.filter((i) => i.status === "RESOLVED").length;
+  const isHealedStatus = (status?: string) =>
+    ["RESOLVED", "MERGED", "PR_MERGED", "HEALED"].includes(
+      (status || "").toUpperCase()
+    );
+
+  const localResolvedCount = incidents.filter((i) =>
+    isHealedStatus(i.status)
+  ).length;
+  const resolvedCount = Math.max(
+    overview?.resolved_incidents ?? 0,
+    localResolvedCount
+  );
 
   const avgMttrSeconds = overview?.avg_mttr_seconds ?? 0;
   const mttrDisplay =
@@ -115,7 +124,9 @@ export default function ReflexDashboardPage() {
     resolvedCount > 0 ? ((resolvedCount * 162.5) / 29).toFixed(1) : "0.0";
 
   const openCrashes = incidents.filter(
-    (i) => i.status !== "RESOLVED" && i.status !== "REJECTED"
+    (i) =>
+      !isHealedStatus(i.status) &&
+      (i.status || "").toUpperCase() !== "REJECTED"
   ).length;
   const vitalityDisplay =
     openCrashes === 0 ? "100%" : `${Math.max(50, 100 - openCrashes * 5)}%`;
@@ -294,7 +305,7 @@ export default function ReflexDashboardPage() {
             <div className="space-y-3">
               {incidents.map((item) => {
                 const isSelected = item.id === selectedId;
-                const isResolved = item.status === "RESOLVED";
+                const isResolved = isHealedStatus(item.status);
                 return (
                   <button
                     key={item.id}

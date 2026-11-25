@@ -58,9 +58,14 @@ export default function ReflexIncidentsPage() {
     }
   };
 
-  const resolvedCount = incidents.filter((i) => i.status === "RESOLVED").length;
+  const isHealedStatus = (status?: string) =>
+    ["RESOLVED", "MERGED", "PR_MERGED", "HEALED"].includes(
+      (status || "").toUpperCase()
+    );
+
+  const resolvedCount = incidents.filter((i) => isHealedStatus(i.status)).length;
   const openCount = incidents.filter(
-    (i) => i.status !== "RESOLVED" && i.status !== "REJECTED"
+    (i) => !isHealedStatus(i.status) && (i.status || "").toUpperCase() !== "REJECTED"
   ).length;
 
   const filteredIncidents = incidents.filter((inc) => {
@@ -68,8 +73,8 @@ export default function ReflexIncidentsPage() {
       filter === "all"
         ? true
         : filter === "resolved"
-        ? inc.status === "RESOLVED"
-        : inc.status !== "RESOLVED" && inc.status !== "REJECTED";
+        ? isHealedStatus(inc.status)
+        : !isHealedStatus(inc.status) && (inc.status || "").toUpperCase() !== "REJECTED";
 
     const q = searchQuery.toLowerCase();
     const matchesSearch =
@@ -187,7 +192,7 @@ export default function ReflexIncidentsPage() {
       ) : (
         <div className="relative z-10 space-y-4">
           {filteredIncidents.map((inc) => {
-            const isResolved = inc.status === "RESOLVED";
+            const isResolved = isHealedStatus(inc.status);
             return (
               <div
                 key={inc.id}
