@@ -336,26 +336,28 @@ async def sync_repositories(
             session.add(new_repo)
             synced_repos.append(new_repo)
 
+    await session.flush()
+
+    # Prune stale repositories for this tenant that are no longer selected in GitHub App
+    synced_ids = [r.id for r in synced_repos]
+    if fetched_repos is not None:
+        prune_conditions = [Repository.organization_id == org_id_str]
+        if org_uuid is not None:
+            prune_conditions.append(Repository.organization_id == org_uuid.hex)
+            prune_conditions.append(Repository.organization_id == str(org_uuid))
+
+        existing_all_res = await session.execute(
+            select(Repository).where(or_(*prune_conditions))
+        )
+        for existing_repo in existing_all_res.scalars().all():
+            if existing_repo.id not in synced_ids:
+                await session.delete(existing_repo)
+
     await session.commit()
 
     # Re-fetch synced repositories with relations loaded
-    synced_ids = [r.id for r in synced_repos]
     if not synced_ids:
-        # Fallback: return all existing repositories for this tenant
-        conditions = [Repository.organization_id == org_id_str]
-        if org_uuid is not None:
-            conditions.append(Repository.organization_id == org_uuid.hex)
-            conditions.append(Repository.organization_id == str(org_uuid))
-        result = await session.execute(
-            select(Repository)
-            .options(selectinload(Repository.sentry_mappings))
-            .where(or_(*conditions))
-            .order_by(Repository.repo_name.asc())
-        )
-        repos_to_return = list(result.scalars().all())
-        if repos_to_return:
-            await _attach_computed_repo_metrics(repos_to_return, tenant, session)
-        return repos_to_return
+        return []
 
     result = await session.execute(
         select(Repository)
@@ -402,6 +404,7 @@ async def update_repository(
     conditions = [Repository.organization_id == org_id_str]
     if org_uuid is not None:
         conditions.append(Repository.organization_id == org_uuid.hex)
+        conditions.append(Repository.organization_id == str(org_uuid))
 
     result = await session.execute(
         select(Repository)
@@ -440,6 +443,7 @@ async def delete_repository(
     conditions = [Repository.organization_id == org_id_str]
     if org_uuid is not None:
         conditions.append(Repository.organization_id == org_uuid.hex)
+        conditions.append(Repository.organization_id == str(org_uuid))
 
     result = await session.execute(
         select(Repository).where(
@@ -467,6 +471,7 @@ async def sync_repository(
     conditions = [Repository.organization_id == org_id_str]
     if org_uuid is not None:
         conditions.append(Repository.organization_id == org_uuid.hex)
+        conditions.append(Repository.organization_id == str(org_uuid))
 
     result = await session.execute(
         select(Repository).where(
