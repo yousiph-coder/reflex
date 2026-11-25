@@ -19,6 +19,7 @@ import {
   Cpu,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { IncidentDetail } from "@/lib/types";
@@ -56,6 +57,18 @@ export default function ReflexIncidentDetailPage() {
   useEffect(() => {
     loadIncident();
   }, [loadIncident]);
+
+  useEffect(() => {
+    const status = (incident?.status || "").toUpperCase();
+    const isTerminal = ["RESOLVED", "MERGED", "PR_MERGED", "HEALED", "FAILED", "REJECTED"].includes(status);
+    if (!incident || isTerminal) return;
+
+    const timer = setInterval(() => {
+      loadIncident();
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [incident?.status, loadIncident]);
 
   const handleRerunSandbox = async () => {
     if (!incident || isRunningSandbox) return;
@@ -119,6 +132,8 @@ export default function ReflexIncidentDetailPage() {
   const isMerged =
     ["PR_MERGED", "MERGED"].includes((latestAttempt?.status || "").toUpperCase()) ||
     isResolved;
+  const hasPr = Boolean(latestAttempt?.pr_url || latestAttempt?.pr_number);
+  const isInProgress = !isMerged && !hasPr && !["FAILED", "REJECTED"].includes(normalizedStatus);
   const durationDisplay = latestAttempt?.duration_seconds
     ? `${latestAttempt.duration_seconds.toFixed(1)}s`
     : "—";
@@ -197,21 +212,28 @@ export default function ReflexIncidentDetailPage() {
               </a>
             )}
 
-            <button
-              type="button"
-              onClick={handleMergePr}
-              disabled={isMerging || isMerged}
-              className="px-4 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 shadow-[0_4px_20px_rgba(99,102,241,0.35)] flex items-center gap-1.5 transition-all disabled:opacity-60"
-            >
-              <GitMerge className="w-3.5 h-3.5" />
-              <span>
-                {isMerging
-                  ? "Merging..."
-                  : isMerged
-                  ? "PR Merged"
-                  : "One-Click Merge PR"}
-              </span>
-            </button>
+            {hasPr || isMerged ? (
+              <button
+                type="button"
+                onClick={handleMergePr}
+                disabled={isMerging || isMerged}
+                className="px-4 py-2 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600 hover:from-indigo-400 hover:to-violet-500 shadow-[0_4px_20px_rgba(99,102,241,0.35)] flex items-center gap-1.5 transition-all disabled:opacity-60"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                <span>
+                  {isMerging
+                    ? "Merging..."
+                    : isMerged
+                    ? "PR Merged"
+                    : "One-Click Merge PR"}
+                </span>
+              </button>
+            ) : (
+              <div className="px-4 py-2 rounded-xl font-mono text-xs font-semibold border border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>{isInProgress ? "Generating Verified PR..." : "Awaiting PR"}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -239,7 +261,7 @@ export default function ReflexIncidentDetailPage() {
             {durationDisplay}
           </div>
           <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-            Model: {latestAttempt?.llm_model || "gpt-4o"}
+            Model: {latestAttempt?.llm_model || "openai/gpt-oss-120b"}
           </p>
         </div>
 
@@ -314,7 +336,7 @@ export default function ReflexIncidentDetailPage() {
               <pre className="leading-relaxed overflow-x-auto">
                 <code>
                   {latestAttempt?.diff ||
-                    "// No patch diff generated yet for this incident."}
+                    "// Reflex autonomous agent is analyzing the stack trace and verifying a patch in the sandbox..."}
                 </code>
               </pre>
             </div>

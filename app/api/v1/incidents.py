@@ -285,9 +285,9 @@ async def build_incident_detail(
         )
 
     # 5. Original & patched code (with live GitHub PR lookup)
-    original_code = DEFAULT_ORIGINAL_CODE
-    patched_code = DEFAULT_PATCHED_CODE
-    diff_patch = DEFAULT_UNIFIED_DIFF
+    original_code = None
+    patched_code = None
+    diff_patch = None
 
     if repo_full_name and pr_number:
         try:
@@ -306,7 +306,7 @@ async def build_incident_detail(
                     files_data = files_resp.json()
                     if files_data and isinstance(files_data, list):
                         target_f = next(
-                            (f for f in files_data if f.get("filename") == (incident.file_path or "src/counter.js")),
+                            (f for f in files_data if incident.file_path and f.get("filename") == incident.file_path),
                             files_data[0],
                         )
                         if target_f.get("patch"):
@@ -356,37 +356,11 @@ async def build_incident_detail(
     if incident.remediation_attempts:
         for a in incident.remediation_attempts:
             att_resp = RemediationAttemptResponse.model_validate(a)
-            if not att_resp.diff:
+            if not att_resp.diff and diff_patch:
                 att_resp.diff = diff_patch
-            if not att_resp.analysis:
-                att_resp.analysis = "Pinpointed unhandled null/undefined reference on items.length at src/counter.js. Added Array.isArray(items) guard returning 0 safely."
             if not att_resp.pr_number and pr_number:
                 att_resp.pr_number = pr_number
             attempts.append(att_resp)
-
-    if not attempts:
-        attempts.append(
-            RemediationAttemptResponse(
-                id=uuid.uuid4(),
-                incident_id=incident.id,
-                strategy="autonomous_fix",
-                analysis="Pinpointed unhandled null/undefined reference on items.length at src/counter.js. Added Array.isArray(items) guard returning 0 safely.",
-                diff=diff_patch,
-                pr_url=incident.pr_url,
-                pr_number=pr_number,
-                branch_name=incident.branch_name or "autoheal/fix",
-                status=RemediationStatus.PR_MERGED if is_healed else RemediationStatus.PR_OPENED,
-                llm_model="openai/gpt-oss-120b",
-                llm_provider="groq",
-                prompt_tokens=1250,
-                completion_tokens=380,
-                total_tokens=1630,
-                cost_usd=0.0072,
-                duration_seconds=4.2,
-                error_message=None,
-                created_at=incident.created_at,
-            )
-        )
 
     # 8. Resolved at
     resolved_at = incident.resolved_at or (incident.updated_at if is_healed else None)
