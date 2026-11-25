@@ -117,12 +117,13 @@ async def _attach_computed_repo_metrics(
             if len(repos) == 1:
                 repo_incidents.append(inc)
 
-        # Count healed PRs (incidents with pr_url linked to this repo or status resolved)
+        # Count healed PRs (incidents with pr_url linked to this repo or status resolved/merged)
         healed_count = sum(
             1
             for inc in repo_incidents
             if any(bool(getattr(att, "pr_url", None)) for att in getattr(inc, "remediation_attempts", []))
-            or (inc.status.value if hasattr(inc.status, "value") else str(inc.status)).upper() in {"RESOLVED"}
+            or (inc.status.value if hasattr(inc.status, "value") else str(inc.status)).upper()
+            in {"RESOLVED", "MERGED", "PR_MERGED", "HEALED"}
         )
 
         # Count open / active incidents

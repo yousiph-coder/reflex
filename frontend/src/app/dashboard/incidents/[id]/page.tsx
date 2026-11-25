@@ -112,8 +112,13 @@ export default function ReflexIncidentDetailPage() {
   }
 
   const latestAttempt = incident.remediation_attempts?.[0];
-  const isResolved = incident.status === "RESOLVED";
-  const isMerged = latestAttempt?.status === "PR_MERGED" || isResolved;
+  const normalizedStatus = (incident.status || "").toUpperCase();
+  const isResolved = ["RESOLVED", "MERGED", "PR_MERGED", "HEALED"].includes(
+    normalizedStatus
+  );
+  const isMerged =
+    ["PR_MERGED", "MERGED"].includes((latestAttempt?.status || "").toUpperCase()) ||
+    isResolved;
   const durationDisplay = latestAttempt?.duration_seconds
     ? `${latestAttempt.duration_seconds.toFixed(1)}s`
     : "—";
