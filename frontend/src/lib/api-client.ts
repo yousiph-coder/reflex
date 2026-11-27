@@ -18,6 +18,40 @@ import {
 } from "./types";
 import { supabase } from "./supabase";
 
+export type { Repository } from "./types";
+
+export interface AuditFinding {
+  id: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | string;
+  category: "crash" | "contract" | "security" | string;
+  file_path: string;
+  line_number?: number;
+  title: string;
+  explanation: string;
+  expected_behavior?: string;
+  suggested_fix?: string;
+}
+
+export interface PreLaunchAuditResult {
+  repository_id: string;
+  repository: string;
+  branch: string;
+  ship_gate: boolean;
+  verdict: "READY" | "NEEDS_FIXES" | "BLOCKED" | string;
+  score: number;
+  summary: string;
+  scanned_files: string[];
+  model: string;
+  duration_seconds: number;
+  findings: AuditFinding[];
+}
+
+export interface AuditAutoFixResult {
+  status: string;
+  incident_id?: string | null;
+  message: string;
+}
+
 export const PAYWALL_TRIGGER_EVENT = "autoheal_paywall_triggered";
 
 export function triggerPaywallModal(detail?: { message?: string }) {
@@ -907,6 +941,32 @@ The \`get_current_user\` function directly accessed the \`'user_id'\` key on the
       method: "POST",
       body: JSON.stringify({ webhook_url }),
     });
+  },
+
+  // ── Pre-Launch Audit & Ship Gate (Feature 2) ───────────────────
+  async runPreLaunchAudit(repoId: string): Promise<PreLaunchAuditResult> {
+    return await fetchWithAuth<PreLaunchAuditResult>(`/repositories/${repoId}/audit`, {
+      method: "POST",
+    });
+  },
+
+  async triggerAuditAutoFix(
+    repoId: string,
+    finding: {
+      file_path: string;
+      line_number?: number;
+      title: string;
+      explanation: string;
+      expected_behavior?: string;
+    }
+  ): Promise<AuditAutoFixResult> {
+    return await fetchWithAuth<AuditAutoFixResult>(
+      `/repositories/${repoId}/audit/auto-fix`,
+      {
+        method: "POST",
+        body: JSON.stringify(finding),
+      }
+    );
   },
 };
 
