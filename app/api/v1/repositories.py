@@ -5,9 +5,10 @@ from __future__ import annotations
 import inspect
 import logging
 import uuid
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -518,3 +519,418 @@ async def test_sentry_connection(payload: SentryTestRequest) -> SentryTestRespon
         project_id=f"proj_{uuid.uuid4().hex[:8]}",
         status="active",
     )
+
+
+# ── Feature 2: Standalone Pre-Launch Audit & Ship Gate ───────────
+
+def _parse_uuid(value: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except Exception:
+        return None
+
+
+class AuditAutoFixRequest(BaseModel):
+    file_path: str
+    line_number: int | None = 1
+    title: str
+    explanation: str = ""
+    expected_behavior: str = ""
+
+
+_AUDIT_SKIP_DIRS = (
+    "node_modules/",
+    ".git/",
+    ".next/",
+    "dist/",
+    "build/",
+    "venv/",
+    ".venv/",
+    "__pycache__/",
+    "coverage/",
+    "vendor/",
+)
+
+_AUDIT_ALLOWED_EXTS = (
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".py",
+    ".go",
+    ".rs",
+    ".json",
+)
+
+_AUDIT_SKIP_FILES = (
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+)
+
+
+def _select_high_signal_files(tree_items: list[dict[str, Any]], max_files: int = 8) -> list[str]:
+    candidates: list[tuple[int, str]] = []
+    for item in tree_items:
+        if item.get("type") != "blob":
+            continue
+        path = str(item.get("path") or "")
+        lower = path.lower()
+        if not path or any(lower.startswith(d) or f"/{d}" in lower for d in _AUDIT_SKIP_DIRS):
+            continue
+        if any(lower.endswith(sf) for sf in _AUDIT_SKIP_FILES):
+            continue
+        if not any(lower.endswith(ext) for ext in _AUDIT_ALLOWED_EXTS):
+            continue
+        size = int(item.get("size") or 0)
+        if size <= 0 or size > 45_000:
+            continue
+
+        # Prioritize backend/service/core source files over tests and configs
+        priority = 2
+        if any(seg in lower for seg in ("server.", "app.", "main.", "lib/", "services/", "api/", "routes/", "src/")):
+            priority = 0
+        elif lower.endswith("package.json") or "data/" in lower:
+            priority = 1
+        elif "test" in lower or "spec" in lower:
+            priority = 3
+        candidates.append((priority, path))
+
+    candidates.sort(key=lambda x: (x[0], len(x[1]), x[1]))
+    return [p for _, p in candidates[:max_files]]
+
+
+def _extract_json_object(raw_text: str) -> dict[str, Any]:
+    import json
+    import re
+
+    cleaned = (raw_text or "").strip()
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
+    if fence:
+        cleaned = fence.group(1)
+    else:
+        brace = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if brace:
+            cleaned = brace.group(0)
+    return json.loads(cleaned)
+
+
+@router.post("/{repo_id}/audit")
+async def run_prelaunch_audit(
+    repo_id: str,
+    tenant: Organization = Depends(get_current_tenant),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Scan a connected GitHub repository before deployment and return a Ship Gate verdict."""
+    import base64
+    import time
+    import httpx
+    from app.config import get_settings
+    from app.services.github_app import get_installation_access_token
+
+    t0 = time.perf_counter()
+    settings = get_settings()
+
+    org_id_str = str(tenant.id)
+    org_uuid = _parse_uuid(org_id_str)
+    conditions = [Repository.organization_id == org_id_str]
+    if org_uuid is not None:
+        conditions.append(Repository.organization_id == org_uuid.hex)
+        conditions.append(Repository.organization_id == str(org_uuid))
+
+    repo_stmt = (
+        select(Repository)
+        .options(selectinload(Repository.sentry_mappings))
+        .where(Repository.id == repo_id, or_(*conditions))
+    )
+    repo = (await session.execute(repo_stmt)).scalar_one_or_none()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found for this organization.")
+
+    installation_id = getattr(tenant, "github_installation_id", None)
+    if not installation_id:
+        org_stmt = (
+            select(Organization).where(Organization.id == org_uuid)
+            if org_uuid is not None
+            else select(Organization).where(Organization.id == org_id_str)
+        )
+        org_row = (await session.execute(org_stmt)).scalar_one_or_none()
+        installation_id = getattr(org_row, "github_installation_id", None) if org_row else None
+
+    if not installation_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No active GitHub App installation found. Sync GitHub in Repositories first.",
+        )
+
+    token_res = get_installation_access_token(int(installation_id))
+    gh_token = await token_res if inspect.isawaitable(token_res) else token_res
+
+    owner = repo.repo_owner
+    name = repo.repo_name
+    branch = repo.default_branch or "main"
+    gh_headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    scanned_files: list[str] = []
+    file_blocks: list[str] = []
+    char_budget = 11_000
+    used_chars = 0
+
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        tree_resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{name}/git/trees/{branch}?recursive=1",
+            headers=gh_headers,
+        )
+        if tree_resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"GitHub tree fetch failed (HTTP {tree_resp.status_code}): {tree_resp.text[:200]}",
+            )
+
+        selected_paths = _select_high_signal_files(tree_resp.json().get("tree", []), max_files=8)
+        for path in selected_paths:
+            if used_chars >= char_budget:
+                break
+            c_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{name}/contents/{path}?ref={branch}",
+                headers=gh_headers,
+            )
+            if c_resp.status_code != 200:
+                continue
+            data = c_resp.json()
+            encoded = data.get("content")
+            if not encoded:
+                continue
+            try:
+                decoded = base64.b64decode(encoded).decode("utf-8", errors="replace")
+            except Exception:
+                continue
+
+            remaining = char_budget - used_chars
+            snippet = decoded[: min(2400, remaining)]
+            numbered = "\n".join(f"{idx + 1}: {ln}" for idx, ln in enumerate(snippet.splitlines()))
+            file_blocks.append(f"=== FILE: {path} ===\n{numbered}")
+            scanned_files.append(path)
+            used_chars += len(snippet)
+
+    if not file_blocks:
+        raise HTTPException(status_code=400, detail="No scannable source files found in this repository.")
+
+    system_prompt = (
+        "You are Reflex Pre-Launch SRE Auditor. Analyze the repository files for REAL production risks before deployment:\n"
+        "1. crash: Unhandled null/undefined property access, missing error guards, runtime TypeErrors/ReferenceErrors.\n"
+        "2. contract: Input/Output contract mismatches between routes, services, data files, and frontend calls.\n"
+        "3. security: Hardcoded secrets, unsafe defaults, missing validation.\n"
+        "Return ONLY valid JSON with this exact schema (no prose outside JSON):\n"
+        "{\n"
+        '  "ship_gate": boolean,\n'
+        '  "verdict": "READY" | "NEEDS_FIXES" | "BLOCKED",\n'
+        '  "score": integer (0-100),\n'
+        '  "summary": "concise 1-2 sentence production readiness summary",\n'
+        '  "findings": [\n'
+        "    {\n"
+        '      "id": "finding-1",\n'
+        '      "severity": "CRITICAL" | "HIGH" | "MEDIUM",\n'
+        '      "category": "crash" | "contract" | "security",\n'
+        '      "file_path": "exact relative file path",\n'
+        '      "line_number": integer,\n'
+        '      "title": "short concrete bug title",\n'
+        '      "explanation": "why this will fail in production",\n'
+        '      "expected_behavior": "what the code should safely do instead",\n'
+        '      "suggested_fix": "short unified diff (- old / + new)"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "Set ship_gate=false and verdict='BLOCKED' if any CRITICAL crash or security issue exists."
+    )
+
+    user_prompt = (
+        f"Audit repository {owner}/{name} (branch: {branch}).\n"
+        "Identify only real, concrete issues present in these exact files:\n\n"
+        + "\n\n".join(file_blocks)
+    )
+
+    target_model = settings.llm_model
+    if "groq.com" in settings.llm_base_url.lower() and (
+        not target_model or target_model.startswith("gpt-4")
+    ):
+        target_model = "openai/gpt-oss-120b"
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        llm_resp = await client.post(
+            f"{settings.llm_base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": target_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 1800,
+            },
+        )
+
+    if llm_resp.status_code == 429:
+        raise HTTPException(
+            status_code=429,
+            detail="LLM rate limit reached (HTTP 429). Wait 30 seconds and click Run Pre-Launch Audit again.",
+        )
+    if llm_resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM audit failed (HTTP {llm_resp.status_code}): {llm_resp.text[:250]}",
+        )
+
+    raw_content = llm_resp.json()["choices"][0]["message"]["content"]
+    try:
+        parsed = _extract_json_object(raw_content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to parse structured audit JSON from LLM: {exc}",
+        )
+
+    findings = parsed.get("findings") or []
+    critical_count = sum(1 for f in findings if str(f.get("severity", "")).upper() == "CRITICAL")
+    score = int(parsed.get("score", max(15, 100 - critical_count * 25 - (len(findings) - critical_count) * 10)))
+    score = max(0, min(100, score))
+    ship_gate = bool(parsed.get("ship_gate", critical_count == 0 and score >= 75))
+    verdict = str(parsed.get("verdict") or ("READY" if ship_gate else "BLOCKED")).upper()
+    if not ship_gate and verdict == "READY":
+        verdict = "BLOCKED"
+
+    return {
+        "repository_id": str(repo.id),
+        "repository": f"{owner}/{name}",
+        "branch": branch,
+        "ship_gate": ship_gate,
+        "verdict": verdict,
+        "score": score,
+        "summary": str(parsed.get("summary") or "Pre-launch static & contract audit completed."),
+        "scanned_files": scanned_files,
+        "model": target_model,
+        "duration_seconds": round(time.perf_counter() - t0, 2),
+        "findings": findings,
+    }
+
+
+@router.post("/{repo_id}/audit/auto-fix")
+async def trigger_audit_auto_fix(
+    repo_id: str,
+    payload: AuditAutoFixRequest,
+    tenant: Organization = Depends(get_current_tenant),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Queue a Pre-Launch Audit finding directly into Reflex's F1 autonomous PR pipeline."""
+    import hashlib
+    import hmac
+    import json
+    import time
+    import uuid
+    import httpx
+    from app.config import get_settings
+
+    settings = get_settings()
+    org_id_str = str(tenant.id)
+    org_uuid = _parse_uuid(org_id_str)
+    conditions = [Repository.organization_id == org_id_str]
+    if org_uuid is not None:
+        conditions.append(Repository.organization_id == org_uuid.hex)
+        conditions.append(Repository.organization_id == str(org_uuid))
+
+    repo_stmt = (
+        select(Repository)
+        .options(selectinload(Repository.sentry_mappings))
+        .where(Repository.id == repo_id, or_(*conditions))
+    )
+    repo = (await session.execute(repo_stmt)).scalar_one_or_none()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found.")
+
+    # Ensure a SentryProjectMapping exists so F1 webhook router resolves this exact repo
+    slug = repo.sentry_mappings[0].sentry_project_slug if repo.sentry_mappings else repo.repo_name.lower()
+    if not repo.sentry_mappings:
+        session.add(
+            SentryProjectMapping(
+                repository_id=repo.id,
+                sentry_org_slug="reflex-org",
+                sentry_project_slug=slug,
+            )
+        )
+        await session.commit()
+
+    webhook_body = {
+        "action": "triggered",
+        "data": {
+            "triggered_rule": "Reflex Pre-Launch Audit Auto-Fix",
+            "event": {
+                "event_id": uuid.uuid4().hex,
+                "issue_id": f"prelaunch-{repo.repo_name}-{int(time.time())}",
+                "project_slug": slug,
+                "title": f"Pre-Launch Audit: {payload.title}",
+                "platform": "node" if (repo.language or "").lower() in {"javascript", "typescript"} else "python",
+                "level": "error",
+                "environment": "pre-launch",
+                "timestamp": time.time(),
+                "culprit": f"{payload.file_path}:{payload.line_number or 1}",
+                "exception": {
+                    "values": [
+                        {
+                            "type": "PreLaunchAuditRisk",
+                            "value": f"{payload.title}. {payload.explanation} Expected: {payload.expected_behavior}".strip(),
+                            "stacktrace": {
+                                "frames": [
+                                    {
+                                        "filename": payload.file_path,
+                                        "function": "prelaunch_audit",
+                                        "lineno": payload.line_number or 1,
+                                        "in_app": True,
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            },
+        },
+    }
+
+    raw_body = json.dumps(webhook_body).encode("utf-8")
+    sig = hmac.new(
+        settings.sentry_client_secret.get_secret_value().encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            "http://127.0.0.1:8000/api/v1/webhooks/sentry",
+            content=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "sentry-hook-signature": sig,
+                "sentry-hook-resource": "event_alert",
+            },
+        )
+
+    if resp.status_code not in (200, 202):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to queue Auto-Fix incident (HTTP {resp.status_code}): {resp.text[:200]}",
+        )
+
+    ack = resp.json()
+    return {
+        "status": "queued",
+        "incident_id": ack.get("incident_id"),
+        "message": "Queued into Reflex F1 autonomous healing pipeline.",
+    }

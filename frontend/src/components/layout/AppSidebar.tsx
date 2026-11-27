@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
+  Radar,
   Search,
   Settings,
   Sparkles,
@@ -42,6 +43,12 @@ const NAV_ITEMS = [
     label: "Repositories",
     href: "/dashboard/repositories",
     icon: FolderGit2,
+    exact: false,
+  },
+  {
+    label: "Pre-Launch Audit",
+    href: "/dashboard/audit",
+    icon: Radar,
     exact: false,
   },
   {
